@@ -10,12 +10,13 @@ ENABLE_KDE_WAYLAND_IME=0
 ENABLE_X11_LAYOUT_SYNC=0
 DISABLE_KIMPANEL=0
 CONFIGURE_PROFILE=1
+PREBUILT_DIR=
 
 usage() {
     cat <<'EOF'
 Usage: scripts/install-user.sh [--enable-kde-layout-sync] [--enable-kde-wayland-ime]
                                [--enable-x11-layout-sync] [--disable-kimpanel]
-                               [--no-configure-profile]
+                               [--no-configure-profile] [--prebuilt-dir DIR]
 
 Builds and installs SmartType into $HOME/.local by default. It does not install
 distribution packages or alter desktop settings unless an explicit option is
@@ -32,6 +33,11 @@ while (($#)); do
         --enable-x11-layout-sync) ENABLE_X11_LAYOUT_SYNC=1 ;;
         --disable-kimpanel) DISABLE_KIMPANEL=1 ;;
         --no-configure-profile) CONFIGURE_PROFILE=0 ;;
+        --prebuilt-dir)
+            [[ $# -ge 2 ]] || { echo "--prebuilt-dir requires a value" >&2; exit 2; }
+            PREBUILT_DIR=$(cd "$2" && pwd)
+            shift
+            ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -48,20 +54,45 @@ command -v fcitx5 >/dev/null || {
     exit 1
 }
 
-cmake_args=(-S "$ROOT" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release
-            -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_INSTALL_LIBDIR=lib
-            -DSMARTTYPE_BUILD_UI_DEMO=OFF)
-if [[ -f "$ROOT/.deps/sysroot/usr/include/Fcitx5/Core/fcitx/instance.h" ]]; then
-    cmake_args+=("-DSMARTTYPE_FCITX_SDK_ROOT=$ROOT/.deps/sysroot")
+if [[ -n $PREBUILT_DIR ]]; then
+    required=(
+        bin/smarttypectl
+        bin/smarttype-tray
+        bin/configure-fcitx-profile.py
+        bin/configure-fcitx-x11.py
+        bin/fcitx5-layout-sync.py
+        lib/fcitx5/smarttype.so
+        lib/fcitx5/smarttypeui.so
+        share/fcitx5/addon/smarttype.conf
+        share/fcitx5/addon/smarttypeui.conf
+        share/fcitx5/inputmethod/smarttype.conf
+        share/fcitx5/inputmethod/smarttype-us.conf
+        share/systemd/user/smarttype-tray.service
+    )
+    for relative_path in "${required[@]}"; do
+        [[ -f "$PREBUILT_DIR/$relative_path" ]] || {
+            echo "Invalid SmartType release bundle: missing $relative_path" >&2
+            exit 1
+        }
+    done
+    echo "==> Installing verified prebuilt SmartType files into $PREFIX"
+    mkdir -p "$PREFIX"
+    cp -a "$PREBUILT_DIR/." "$PREFIX/"
+else
+    cmake_args=(-S "$ROOT" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release
+                -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_INSTALL_LIBDIR=lib
+                -DSMARTTYPE_BUILD_UI_DEMO=OFF)
+    if [[ -f "$ROOT/.deps/sysroot/usr/include/Fcitx5/Core/fcitx/instance.h" ]]; then
+        cmake_args+=("-DSMARTTYPE_FCITX_SDK_ROOT=$ROOT/.deps/sysroot")
+    fi
+
+    cmake "${cmake_args[@]}"
+    cmake --build "$BUILD" --parallel "$BUILD_JOBS"
+    ctest --test-dir "$BUILD" --output-on-failure
+    echo "=== Хеши установленных файлов перед установкой ==="
+    sha256sum "$PREFIX/bin/smarttypectl" "$PREFIX/lib/fcitx5/smarttype.so" 2>/dev/null || true
+    cmake --install "$BUILD"
 fi
-
-cmake "${cmake_args[@]}"
-cmake --build "$BUILD" --parallel "$BUILD_JOBS"
-ctest --test-dir "$BUILD" --output-on-failure
-echo "=== Хеши установленных файлов перед установкой ==="
-sha256sum "$PREFIX/bin/smarttypectl" "$PREFIX/lib/fcitx5/smarttype.so" 2>/dev/null || true
-
-cmake --install "$BUILD"
 
 # Retire every historical state-specific icon. The tray now embeds its two
 # theme variants, while the desktop launcher uses only smarttype-idle.png.
@@ -153,7 +184,7 @@ fi
 TRAY_UNIT_SRC="$PREFIX/share/systemd/user/smarttype-tray.service"
 TRAY_UNIT_DST="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/smarttype-tray.service"
 mkdir -p "$(dirname "$TRAY_UNIT_DST")"
-cp "$TRAY_UNIT_SRC" "$TRAY_UNIT_DST"
+sed "s|^ExecStart=.*|ExecStart=$TRAY_BIN|" "$TRAY_UNIT_SRC" > "$TRAY_UNIT_DST"
 
 # Remove both historical XDG autostart locations so only systemd owns the
 # process and a manual launcher invocation cannot replace its lifecycle.

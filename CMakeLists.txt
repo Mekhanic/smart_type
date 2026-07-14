@@ -56,6 +56,8 @@ install(TARGETS smarttypectl smarttype-eval DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(PROGRAMS scripts/fcitx5-layout-sync.py DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(PROGRAMS scripts/configure-fcitx-x11.py DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(PROGRAMS scripts/configure-fcitx-profile.py DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(PROGRAMS scripts/doctor.sh scripts/uninstall-user.sh
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/smarttype)
 install(FILES config/fcitx5-layout-sync.service DESTINATION ${CMAKE_INSTALL_DATADIR}/systemd/user)
 configure_file(config/smarttype-tray.service.in smarttype-tray.service @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/smarttype-tray.service

@@ -48,6 +48,7 @@ rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/smarttype.svg" \
 
 rm -f "$HOME/.local/share/systemd/user/fcitx5-layout-sync.service"
 rm -f "$HOME/.config/environment.d/90-smarttype.conf"
+rm -f "$PREFIX/share/smarttype/doctor.sh" "$PREFIX/share/smarttype/uninstall-user.sh"
 systemctl --user daemon-reload 2>/dev/null || true
 
 if command -v kpackagetool6 >/dev/null; then
