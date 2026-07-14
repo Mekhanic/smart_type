@@ -9,29 +9,34 @@ integration, XWayland, Ubuntu 24.04, Arch, and the Fcitx client-side input-panel
 path remain unsupported release targets.
 
 Do not use Flatpak or AppImage for the addon: a sandboxed application cannot
-install a shared addon into the host Fcitx process. Use the source install or a
-native distro package.
+install a shared addon into the host Fcitx process. Use the checksum-verified
+user-local release bundle.
 
 ## Recommended installation
 
 Run this command from a terminal inside the graphical session:
 
 ```bash
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/Mekhanic/smart_type/main/scripts/install-release.sh | bash
 ```
 
 It detects the verified distro/session combination, installs dependencies,
-builds and tests the project, configures the matching Fcitx integration, adds
-SmartType English/Russian to the existing Fcitx group without deleting other
-input methods, and enables the tray services. The original Fcitx profile is
-saved once as `~/.config/fcitx5/profile.before-smarttype`.
+downloads the matching x86_64 release asset, verifies the published SHA-256,
+configures the matching Fcitx integration, adds SmartType English/Russian to
+the existing Fcitx group without deleting other input methods, and enables the
+tray services. The original Fcitx profile is saved once as
+`~/.config/fcitx5/profile.before-smarttype`.
 
 Log out and back in once after the first installation. SmartType English is
-selected by default. `./install.sh --skip-deps` skips package installation;
-`--mode kde-wayland` and `--mode x11` override session detection.
-Builds use two parallel compiler jobs by default so installation remains
-reliable on small VMs. Set `SMARTTYPE_BUILD_JOBS=4` (or another value) to
-override it.
+selected by default. The normal path does not install compilers or development
+headers. It needs an x86_64 system, internet access, and temporary administrator
+access only for runtime packages.
+
+Cloning the repository and running `./install.sh` uses the same prebuilt path.
+Use `./install.sh --build-from-source` for development or local compilation.
+Source builds use two parallel jobs by default; 4 GB RAM, two CPU cores and
+about 5 GB free space are recommended. Set `SMARTTYPE_BUILD_JOBS` to override
+the job count.
 
 ## Dependencies for manual installation
 
@@ -90,18 +95,21 @@ opt in to disabling it:
 ./scripts/install-user.sh --disable-kimpanel
 ```
 
-## Distribution packages
+## Release bundles and future native packages
 
-Future release channels are native RPM and DEB packages. A system
-package must install the addons to the distro-selected `${CMAKE_INSTALL_LIBDIR}/fcitx5`
-and the Fcitx metadata to `${CMAKE_INSTALL_DATADIR}/fcitx5`. Package recipes
-and CI smoke builds remain release work; until then the user-local source
-install above is the supported installation path.
+GitHub Actions builds and tests separate binary bundles inside Fedora 44,
+Ubuntu 26.04 and Kali Rolling containers. A tag publishes all three archives
+and checksum files to the GitHub release. This keeps the host-level Fcitx and
+per-user desktop configuration in one verified installer.
+
+Native RPM/DEB packages may be added later, but they still need a post-install
+user configuration step. AppImage and Flatpak remain a poor technical fit for
+a library loaded by the host Fcitx process.
 
 ## Verification
 
 ```bash
-./scripts/doctor.sh
+~/.local/share/smarttype/doctor.sh
 systemctl --user status smarttype-tray.service
 fcitx5-configtool
 ```

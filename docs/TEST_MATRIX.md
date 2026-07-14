@@ -232,6 +232,18 @@ Visual and interaction verification of native Wayland candidate panel:
 | Repository license is the official GNU GPL-3.0 text | **PASS** (byte-identical to `gnu.org/licenses/gpl-3.0.txt`; SHA-256 `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`) |
 | Tray and settings expose the project/support GitHub page | **PASS** on Fedora 44, Ubuntu 26.04 and Kali Rolling (12/12 each; installed binary contains the exact URL and `--check-settings` succeeds) |
 
+## Prebuilt release channel (2026-07-15)
+
+| Check | Result |
+|---|---|
+| Normal installer avoids compiler and development packages | **PASS** in staged Fedora/Ubuntu/Kali bundle installs |
+| Release download is protected by a published SHA-256 file | **PASS** for generated Fedora archive and internal payload manifest |
+| Separate Fedora 44, Ubuntu 26.04 and Kali Rolling bundles | **PASS** in PR release matrix ([run 29371186999](https://github.com/Mekhanic/smart_type/actions/runs/29371186999)); tagged publication pending |
+| Source-build fallback remains available | **PASS** (`./install.sh --build-from-source`) |
+| Fedora bundle build, complete CTest, staged user install and invalid-payload rejection | **PASS**, 12/12 + installer smoke |
+| Ubuntu 26.04 bundle build, complete CTest, staged user install and invalid-payload rejection | **PASS**, 12/12 + installer smoke |
+| Kali Rolling bundle build, complete CTest, staged user install and invalid-payload rejection | **PASS**, 12/12 + installer smoke |
+
 ---
 
 ## ST-017: Layout logical IM sync

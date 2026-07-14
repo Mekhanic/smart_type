@@ -47,7 +47,7 @@ If either check fails, reopen its existing ticket with the new evidence. If it p
 - XWayland coordinate mapping and support;
 - GNOME/non-KDE portability;
 - long-session performance work;
-- native RPM/DEB package recipes and CI matrix (the portable source installer is implemented).
+- native RPM/DEB package recipes (checksum-verified per-distro release bundles are implemented first).
 
 These entries intentionally have no ticket status. Reintroduce only the ones justified by manual testing or a
 chosen release target.

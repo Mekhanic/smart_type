@@ -1,0 +1,99 @@
+name: Release bundles
+
+on:
+  pull_request:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag to build (for example v0.1.1)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }} bundle
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: fedora44
+            image: fedora:44
+            family: fedora
+          - target: ubuntu2604
+            image: ubuntu:26.04
+            family: debian
+          - target: kali-rolling
+            image: kalilinux/kali-rolling
+            family: debian
+
+    steps:
+      - name: Install Fedora build dependencies
+        if: matrix.family == 'fedora'
+        run: >-
+          dnf --setopt=install_weak_deps=False install -y git gcc-c++ cmake ninja-build python3 tar gzip sqlite-devel glibc-gconv-extra
+          fcitx5 fcitx5-devel hunspell hunspell-ru qt6-qtbase-devel
+          qt6-qtdeclarative-devel pkgconf-pkg-config cairo-devel pango-devel
+          gdk-pixbuf2-devel glib2-devel wayland-devel wayland-protocols-devel
+          libxcb-devel xcb-util-devel xcb-util-wm-devel xcb-util-keysyms-devel
+
+      - name: Install Ubuntu/Kali build dependencies
+        if: matrix.family == 'debian'
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y git build-essential cmake ninja-build pkg-config python3 tar gzip \
+            libsqlite3-dev fcitx5 libfcitx5core-dev libfcitx5utils-dev \
+            libfcitx5config-dev fcitx5-modules-dev fcitx5-frontend-qt6 \
+            fcitx5-frontend-gtk3 fcitx5-config-qt hunspell hunspell-ru hunspell-en-us \
+            qt6-base-dev qt6-declarative-dev libcairo2-dev libpango1.0-dev \
+            libgdk-pixbuf-2.0-dev libglib2.0-dev libwayland-dev wayland-protocols \
+            libxcb1-dev libxcb-util-dev libxcb-icccm4-dev libxcb-xinerama0-dev \
+            libxcb-randr0-dev libxcb-ewmh-dev libxcb-keysyms1-dev
+
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Build, test, and package
+        env:
+          RELEASE_VERSION: ${{ github.event_name == 'pull_request' && 'v0.0.0' || inputs.version || github.ref_name }}
+        run: scripts/build-release-bundle.sh "$RELEASE_VERSION" "${{ matrix.target }}" dist
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v6
+        with:
+          name: smarttype-${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release assets
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all bundles
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "SmartType $TAG" --generate-notes
+          gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber

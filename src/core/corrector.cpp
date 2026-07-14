@@ -243,6 +243,10 @@ std::vector<Rule> initial_rules() {
         {"рабоать", "работать", 0.99, std::nullopt},
         {"вопще", "вообще", 0.98, std::nullopt},
         {"дамой", "домой", 0.98, std::nullopt},
+        {"здраствуйте", "здравствуйте", 0.99, std::nullopt},
+        {"теливзор", "телевизор", 0.99, std::nullopt},
+        {"теливизора", "телевизора", 0.99, std::nullopt},
+        {"теливизорами", "телевизорами", 0.99, std::nullopt},
         {"прийдет", "придёт", 0.96, std::nullopt},
         {"всетаки", "всё-таки", 0.96, std::nullopt},
         {"потомучто", "потому что", 0.96, std::nullopt},
@@ -867,6 +871,23 @@ std::vector<std::string> Corrector::get_candidates(std::string_view word, const 
     const bool is_english = is_qwerty_only(word) && has_ascii_letter(word);
     const auto normalized = lowercase_ru(word);
 
+    // Never let distro-specific Hunspell entries turn a one-letter Russian
+    // word into a layout candidate. Keep the same explicit one-key policy as
+    // decide() before consulting either dictionary.
+    if (utf8_to_utf32(normalized).size() <= 1) {
+        if (is_qwerty_only(word) && has_ascii_letter(word)) {
+            const auto cyrillic = qwerty_to_cyrillic(word);
+            const auto cyrillic_normalized = lowercase_ru(cyrillic);
+            if (cyrillic_normalized == "а" || cyrillic_normalized == "и" ||
+                cyrillic_normalized == "в" || cyrillic_normalized == "о" ||
+                cyrillic_normalized == "с" || cyrillic_normalized == "у" ||
+                cyrillic_normalized == "я" || cyrillic_normalized == "к") {
+                return {preserve_case(word, cyrillic)};
+            }
+        }
+        return {};
+    }
+
     // Check for layout correction candidate first
     std::optional<std::string> layout_corrected;
     if (is_qwerty_only(word)) {
@@ -902,19 +923,6 @@ std::vector<std::string> Corrector::get_candidates(std::string_view word, const 
     }
 
     if (is_protected(word)) return {};
-    if (utf8_to_utf32(normalized).size() <= 1) {
-        if (is_qwerty_only(word) && has_ascii_letter(word)) {
-            const auto cyrillic = qwerty_to_cyrillic(word);
-            const auto cyrillic_normalized = lowercase_ru(cyrillic);
-            if (cyrillic_normalized == "а" || cyrillic_normalized == "и" ||
-                cyrillic_normalized == "в" || cyrillic_normalized == "о" ||
-                cyrillic_normalized == "с" || cyrillic_normalized == "у" ||
-                cyrillic_normalized == "я" || cyrillic_normalized == "к") {
-                return {preserve_case(word, cyrillic)};
-            }
-        }
-        return {};
-    }
     std::vector<std::pair<std::string, double>> scored_candidates;
     std::unordered_set<std::string> seen;
 
