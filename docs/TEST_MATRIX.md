@@ -236,11 +236,13 @@ Visual and interaction verification of native Wayland candidate panel:
 
 | Check | Result |
 |---|---|
-| Normal installer avoids compiler and development packages | **PASS** in staged Fedora bundle install; release-matrix verification pending CI |
+| Normal installer avoids compiler and development packages | **PASS** in staged Fedora/Ubuntu/Kali bundle installs |
 | Release download is protected by a published SHA-256 file | **PASS** for generated Fedora archive and internal payload manifest |
-| Separate Fedora 44, Ubuntu 26.04 and Kali Rolling bundles | **IMPLEMENTED** in GitHub Actions; tagged workflow pending |
+| Separate Fedora 44, Ubuntu 26.04 and Kali Rolling bundles | **PASS** in PR release matrix ([run 29371186999](https://github.com/Mekhanic/smart_type/actions/runs/29371186999)); tagged publication pending |
 | Source-build fallback remains available | **PASS** (`./install.sh --build-from-source`) |
 | Fedora bundle build, complete CTest, staged user install and invalid-payload rejection | **PASS**, 12/12 + installer smoke |
+| Ubuntu 26.04 bundle build, complete CTest, staged user install and invalid-payload rejection | **PASS**, 12/12 + installer smoke |
+| Kali Rolling bundle build, complete CTest, staged user install and invalid-payload rejection | **PASS**, 12/12 + installer smoke |
 
 ---
 
