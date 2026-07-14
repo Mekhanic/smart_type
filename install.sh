@@ -118,7 +118,7 @@ install_runtime_dependencies() {
         fedora44)
             command=(sudo dnf --setopt=install_weak_deps=False install)
             (( ASSUME_YES )) && command+=(-y)
-            command+=(fcitx5 fcitx5-qt fcitx5-gtk fcitx5-configtool hunspell hunspell-ru
+            command+=(fcitx5 fcitx5-qt fcitx5-gtk fcitx5-configtool hunspell hunspell-ru glibc-gconv-extra
                 qt6-qtbase qt6-qtdeclarative cairo pango gdk-pixbuf2 glib2 wayland-libs
                 libxcb xcb-util xcb-util-wm xcb-util-keysyms)
             "${command[@]}"
@@ -128,7 +128,7 @@ install_runtime_dependencies() {
             command=(sudo apt-get install)
             (( ASSUME_YES )) && command+=(-y)
             command+=(fcitx5 fcitx5-frontend-qt6 fcitx5-frontend-gtk3 fcitx5-config-qt
-                hunspell hunspell-ru libqt6core6 libqt6gui6 libqt6widgets6 libqt6dbus6
+                hunspell hunspell-ru hunspell-en-us libqt6core6 libqt6gui6 libqt6widgets6 libqt6dbus6
                 libqt6qml6 libcairo2 libpango-1.0-0 libgdk-pixbuf-2.0-0 libglib2.0-0
                 libwayland-client0 libxcb1 libxcb-util1 libxcb-icccm4 libxcb-xinerama0
                 libxcb-randr0 libxcb-ewmh2 libxcb-keysyms1)
@@ -142,7 +142,7 @@ install_build_dependencies() {
         fedora44)
             command=(sudo dnf --setopt=install_weak_deps=False install)
             (( ASSUME_YES )) && command+=(-y)
-            command+=(fcitx5 fcitx5-devel fcitx5-qt fcitx5-gtk fcitx5-configtool
+            command+=(fcitx5 fcitx5-devel fcitx5-qt fcitx5-gtk fcitx5-configtool glibc-gconv-extra
                 hunspell hunspell-ru gcc-c++ cmake ninja-build sqlite-devel
                 pkgconf-pkg-config cairo-devel pango-devel gdk-pixbuf2-devel glib2-devel
                 wayland-devel wayland-protocols-devel qt6-qtbase-devel
@@ -156,7 +156,7 @@ install_build_dependencies() {
             (( ASSUME_YES )) && command+=(-y)
             command+=(build-essential cmake ninja-build pkg-config libsqlite3-dev fcitx5
                 libfcitx5core-dev libfcitx5utils-dev libfcitx5config-dev fcitx5-modules-dev
-                fcitx5-frontend-qt6 fcitx5-frontend-gtk3 fcitx5-config-qt hunspell hunspell-ru
+                fcitx5-frontend-qt6 fcitx5-frontend-gtk3 fcitx5-config-qt hunspell hunspell-ru hunspell-en-us
                 qt6-base-dev qt6-declarative-dev libcairo2-dev libpango1.0-dev
                 libgdk-pixbuf-2.0-dev libglib2.0-dev libwayland-dev wayland-protocols
                 libxcb1-dev libxcb-util-dev libxcb-icccm4-dev libxcb-xinerama0-dev

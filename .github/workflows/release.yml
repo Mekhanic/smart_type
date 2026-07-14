@@ -37,7 +37,7 @@ jobs:
       - name: Install Fedora build dependencies
         if: matrix.family == 'fedora'
         run: >-
-          dnf --setopt=install_weak_deps=False install -y git gcc-c++ cmake ninja-build python3 tar gzip sqlite-devel
+          dnf --setopt=install_weak_deps=False install -y git gcc-c++ cmake ninja-build python3 tar gzip sqlite-devel glibc-gconv-extra
           fcitx5 fcitx5-devel hunspell hunspell-ru qt6-qtbase-devel
           qt6-qtdeclarative-devel pkgconf-pkg-config cairo-devel pango-devel
           gdk-pixbuf2-devel glib2-devel wayland-devel wayland-protocols-devel
@@ -52,7 +52,7 @@ jobs:
           apt-get install -y git build-essential cmake ninja-build pkg-config python3 tar gzip \
             libsqlite3-dev fcitx5 libfcitx5core-dev libfcitx5utils-dev \
             libfcitx5config-dev fcitx5-modules-dev fcitx5-frontend-qt6 \
-            fcitx5-frontend-gtk3 fcitx5-config-qt hunspell hunspell-ru \
+            fcitx5-frontend-gtk3 fcitx5-config-qt hunspell hunspell-ru hunspell-en-us \
             qt6-base-dev qt6-declarative-dev libcairo2-dev libpango1.0-dev \
             libgdk-pixbuf-2.0-dev libglib2.0-dev libwayland-dev wayland-protocols \
             libxcb1-dev libxcb-util-dev libxcb-icccm4-dev libxcb-xinerama0-dev \
