@@ -14,6 +14,7 @@ for command in fcitx5 fcitx5-remote systemctl pkill killall update-desktop-datab
     ln -s /usr/bin/true "$MOCK_BIN/$command"
 done
 
+env -u USER \
 HOME="$TEST_HOME" \
 XDG_CONFIG_HOME="$TEST_HOME/.config" \
 SMARTTYPE_PREFIX="$TEST_HOME/.local" \

@@ -255,7 +255,7 @@ command -v gtk-update-icon-cache >/dev/null && \
     gtk-update-icon-cache --force --ignore-theme-index "$PREFIX/share/icons/hicolor" || true
 command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 --noincremental || true
 
-echo "SmartType установлен для пользователя $USER."
+echo "SmartType установлен для пользователя ${USER:-$(id -un)}."
 echo "Перезапустите графический сеанс, чтобы Fcitx получил новое окружение."
 if (( CONFIGURE_PROFILE )); then
     echo "SmartType English и SmartType Русский уже добавлены в профиль Fcitx."
