@@ -1,6 +1,7 @@
 name: Release bundles
 
 on:
+  pull_request:
   push:
     tags:
       - "v*"
@@ -62,7 +63,7 @@ jobs:
 
       - name: Build, test, and package
         env:
-          RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
+          RELEASE_VERSION: ${{ github.event_name == 'pull_request' && 'v0.0.0' || inputs.version || github.ref_name }}
         run: scripts/build-release-bundle.sh "$RELEASE_VERSION" "${{ matrix.target }}" dist
 
       - name: Upload release bundle
