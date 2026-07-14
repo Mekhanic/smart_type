@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Installation guide
+    url: https://github.com/Mekhanic/smart_type/blob/main/docs/INSTALL.md
+    about: Check supported distributions and installation instructions.

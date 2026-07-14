@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/smarttype/icons">
+        <file alias="tray-dark.png">../../icons/dark_theme_logo.png</file>
+        <file alias="tray-light.png">../../icons/white_theme_logo.png</file>
+        <file alias="application.png">../../icons/icon_idle.png</file>
+    </qresource>
+</RCC>

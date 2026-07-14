@@ -1,0 +1,16 @@
+[Unit]
+Description=SmartType tray and settings
+# Plasma starts graphical-session.target, but Xfce installations commonly do
+# not. default.target may therefore run before the desktop imports DISPLAY or
+# WAYLAND_DISPLAY into the user manager. Wait for that import before creating
+# QApplication; otherwise Qt aborts and leaves a core dump on every login.
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/timeout 60 /bin/sh -c 'until systemctl --user show-environment | grep -Eq "^(DISPLAY|WAYLAND_DISPLAY)="; do sleep 0.25; done'
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/smarttype-tray
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

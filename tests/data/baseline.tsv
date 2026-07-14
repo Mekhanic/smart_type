@@ -1,0 +1,12 @@
+# previous context	typed token	expected candidate	expected action
+я	севодня	сегодня	replace
+хуже	рабоать	работать	replace
+это	вопще	вообще	replace
+пойду	дамой	домой	replace
+я	незнаю	не знаю	replace
+ты	незнаю	незнаю	keep
+мы говорили	вопщем	в общем	suggest
+запусти	Happ	Happ	keep
+открой	https://example.com/севодня	https://example.com/севодня	keep
+настрой	Xray-сервер	Xray-сервер	keep
+вы	здраствуйте	здравствуйте	replace

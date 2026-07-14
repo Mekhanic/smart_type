@@ -1,0 +1,10 @@
+[Addon]
+Name=SmartType
+Name[ru]=SmartType — личный автокорректор
+Category=InputMethod
+Version=@PROJECT_VERSION@
+Library=smarttype
+Type=SharedLibrary
+OnDemand=True
+Configurable=False
+

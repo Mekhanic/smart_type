@@ -1,0 +1,7 @@
+#pragma once
+#include <string_view>
+
+namespace smarttype {
+inline constexpr std::string_view GIT_COMMIT_HASH = "@GIT_COMMIT_HASH@";
+inline constexpr std::string_view BUILD_TIMESTAMP = "@BUILD_TIMESTAMP@";
+}

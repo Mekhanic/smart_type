@@ -1,0 +1,11 @@
+[Groups/0]
+Name=SmartType Test
+Default Layout=ru
+DefaultIM=smarttype
+
+[Groups/0/Items/0]
+Name=smarttype
+Layout=ru
+
+[GroupOrder]
+0=SmartType Test

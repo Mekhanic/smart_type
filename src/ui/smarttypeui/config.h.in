@@ -1,0 +1,21 @@
+#ifndef _FCITX5_CONFIG_H_
+#define _FCITX5_CONFIG_H_
+
+#define FCITX_INSTALL_PREFIX "@CMAKE_INSTALL_PREFIX@"
+#define FCITX_INSTALL_PKGDATADIR "@CMAKE_INSTALL_PREFIX@/share/fcitx5"
+#define FCITX_INSTALL_LOCALEDIR "@CMAKE_INSTALL_PREFIX@/share/locale"
+#define FCITX_INSTALL_ADDONDIR "@CMAKE_INSTALL_PREFIX@/lib64/fcitx5"
+
+#define FCITX_VERSION_STRING "@PROJECT_VERSION@"
+
+#cmakedefine ENABLE_X11
+#cmakedefine WAYLAND_FOUND
+#cmakedefine ENABLE_DBUS
+
+#define HAVE_SYS_MMAN_H 1
+
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#endif

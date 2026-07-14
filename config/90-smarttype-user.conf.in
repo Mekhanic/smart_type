@@ -1,0 +1,3 @@
+# Legacy template. install-user.sh writes the real addon path for the current
+# prefix and distribution; do not hard-code lib or lib64 here.
+XMODIFIERS=@im=fcitx

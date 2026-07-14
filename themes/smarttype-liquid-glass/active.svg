@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="26" viewBox="0 0 80 26">
+  <!-- Pill Background -->
+  <rect x="0" y="0" width="80" height="26" rx="13" ry="13" fill="#ffffff" fill-opacity="0.12"/>
+  <!-- Top Inset Highlight along the top capsule boundary only -->
+  <path d="M 0.5 13 A 12.5 12.5 0 0 1 13 0.5 L 67 0.5 A 12.5 12.5 0 0 1 79.5 13" fill="none" stroke="#ffffff" stroke-opacity="0.10" stroke-width="1"/>
+</svg>

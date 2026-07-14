@@ -1,0 +1,15 @@
+/build/
+/build-*/
+/CMakeFiles/
+/stage/
+/.deps/
+/.directory
+/vm-reports/
+__pycache__/
+*.pyc
+*.sqlite3
+/MEMORY.md
+/out.log
+/smarttype_*.html
+/logo_smart-type.png
+/icons/*.ico

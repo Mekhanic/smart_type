@@ -1,0 +1,13 @@
+{
+  "KPlugin": {
+    "Id": "smarttype-position",
+    "Name": "SmartType caret positioning",
+    "Description": "Publishes active client geometry to the SmartType candidate renderer",
+    "Version": "1.0",
+    "License": "MIT",
+    "Authors": [{ "Name": "SmartType" }]
+  },
+  "X-KDE-PluginInfo-Name": "smarttype-position",
+  "X-Plasma-API": "javascript",
+  "KPackageStructure": "KWin/Script"
+}

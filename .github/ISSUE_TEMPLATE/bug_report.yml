@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a reproducible SmartType problem
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a problem. Never attach passwords, tokens,
+        private messages, or your personal database.
+  - type: input
+    id: distro
+    attributes:
+      label: Linux distribution and version
+      placeholder: Fedora 44, Ubuntu 26.04, Kali Rolling
+    validations:
+      required: true
+  - type: dropdown
+    id: session
+    attributes:
+      label: Desktop session
+      options:
+        - KDE Plasma / Wayland
+        - Xfce / X11
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: application
+    attributes:
+      label: Affected application
+      placeholder: Firefox, Chromium, Kate, Mousepad
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Include the exact input and the resulting text.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: SmartType problem report
+      description: Paste or attach the Markdown report generated from the tray.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed passwords, tokens, private messages, and other sensitive data.
+          required: true

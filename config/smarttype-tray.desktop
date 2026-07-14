@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Smart Type
+GenericName=Автокорректор SmartType
+Comment=Режимы и история исправлений SmartType
+Exec=@HOME@/.local/bin/smarttype-tray
+Icon=smarttype-idle
+Terminal=false
+Categories=Utility;
+Keywords=smart;type;smarttype;t9;раскладка;автоисправление;исправление;клавиатура;
+StartupWMClass=SmartType

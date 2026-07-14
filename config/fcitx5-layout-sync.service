@@ -1,0 +1,15 @@
+[Unit]
+Description=Synchronize desktop layout switching with SmartType
+# Start after the graphical session; fcitx5.service may be absent on some setups.
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/timeout 60 /bin/sh -c 'until systemctl --user show-environment | grep -Eq "^(DISPLAY|WAYLAND_DISPLAY)="; do sleep 0.25; done'
+ExecStart=%h/.local/bin/fcitx5-layout-sync.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
