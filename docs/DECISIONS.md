@@ -159,3 +159,45 @@ of the installed hicolor theme index.
   already-tested compatibility path for browsers that ignore surrounding deletion.
 - Tray health is testable through systemd `is-enabled`, `is-active`, and `MainPID`
   rather than inferred from an arbitrary process name.
+
+---
+
+## ADR-008: GNOME Wayland integration through Fcitx IBus and Kimpanel
+
+### Context
+
+GNOME Wayland does not provide KDE's input-panel protocol to third-party input
+methods. Reusing the KDE `smarttypeui` path would leave the candidate popup
+without a supported compositor surface. Reusing the former X11 server-side
+preedit workaround would be worse: composition could appear inside the popup
+instead of the focused application field.
+
+### Decision
+
+- GNOME Wayland enables Fcitx `ibusfrontend` and `kimpanel` and disables the
+  internal `smarttypeui` addon.
+- `GTK_IM_MODULE=fcitx` is used because Ubuntu's confined Firefox cannot create
+  a working Fcitx IBus context. Its bundled legacy-compatible GTK module sends
+  a window-relative caret rectangle through Kimpanel's old absolute method.
+  The pinned extension contains a narrow correction that treats this method as
+  relative only for a focused native Wayland window; X11/XWayland stays absolute.
+- GTK and Qt applications receive composition through their Fcitx frontend;
+  Kimpanel renders candidates only.
+- SmartType installs the upstream `kimpanel@kde.org` GNOME Shell extension from
+  one pinned commit whose archive SHA-256 is verified during release assembly.
+- Configuration is user-local and idempotent. Existing extension membership,
+  unrelated environment variables, Fcitx methods and addon settings are
+  preserved or backed up.
+- The KDE layout synchronizer is disabled in GNOME. Fcitx owns RU/US switching
+  through Alt+Shift and shared input state; the engine normalizes physical
+  keysyms to the selected SmartType method because GNOME keeps a single
+  compositor XKB source.
+
+### Consequences
+
+- GNOME and KDE use different candidate renderers but the same SmartType engine
+  and correction semantics.
+- A first install requires a logout/login so GNOME Shell loads the extension
+  and applications inherit the input-method environment.
+- XWayland-only contexts remain outside the release target; supporting GNOME
+  Wayland does not imply support for every application packaging/sandbox path.

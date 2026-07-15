@@ -9,7 +9,8 @@ ASSUME_YES=0
 
 usage() {
     cat <<'EOF'
-Usage: install-release.sh [--version vX.Y.Z] [--mode auto|kde-wayland|x11]
+Usage: install-release.sh [--version vX.Y.Z]
+                          [--mode auto|kde-wayland|gnome-wayland|x11]
                           [--skip-deps] [--yes]
 
 Downloads the matching SmartType release from GitHub, verifies its SHA-256
@@ -37,6 +38,13 @@ while (($#)); do
     shift
 done
 
+# With `curl ... | bash`, stdin contains the script itself and must never be
+# consumed by apt/dnf confirmation prompts. Sudo still uses the controlling
+# terminal for a password when one is required.
+if [[ ! -t 0 ]]; then
+    ASSUME_YES=1
+fi
+
 for command in curl tar sha256sum; do
     command -v "$command" >/dev/null || {
         echo "Required command is missing: $command" >&2
@@ -53,30 +61,37 @@ case "$(uname -m)" in
         ;;
 esac
 
-[[ -r /etc/os-release ]] || { echo "Cannot identify this Linux distribution." >&2; exit 1; }
-# shellcheck source=/dev/null
-. /etc/os-release
-case "${ID:-}:${VERSION_ID:-}" in
-    fedora:44) TARGET=fedora44 ;;
-    ubuntu:26.04) TARGET=ubuntu2604 ;;
-    kali:*) TARGET=kali-rolling ;;
-    *)
-        echo "No prebuilt SmartType release for ${PRETTY_NAME:-${ID:-unknown}}." >&2
-        echo "Supported: Fedora 44, Ubuntu 26.04, Kali Rolling (x86_64)." >&2
-        exit 1
-        ;;
+TARGET=${SMARTTYPE_RELEASE_TARGET:-}
+if [[ -z $TARGET ]]; then
+    [[ -r /etc/os-release ]] || { echo "Cannot identify this Linux distribution." >&2; exit 1; }
+    # shellcheck source=/dev/null
+    . /etc/os-release
+    case "${ID:-}:${VERSION_ID:-}" in
+        fedora:44) TARGET=fedora44 ;;
+        ubuntu:26.04) TARGET=ubuntu2604 ;;
+        kali:*) TARGET=kali-rolling ;;
+        *)
+            echo "No prebuilt SmartType release for ${PRETTY_NAME:-${ID:-unknown}}." >&2
+            echo "Supported: Fedora 44, Ubuntu 26.04, Kali Rolling (x86_64)." >&2
+            exit 1
+            ;;
+    esac
+fi
+case "$TARGET" in
+    fedora44|ubuntu2604|kali-rolling) ;;
+    *) echo "Invalid SmartType release target: $TARGET" >&2; exit 2 ;;
 esac
 
 if [[ -z $VERSION ]]; then
     echo "==> Resolving the newest SmartType release"
-    release_json=$(curl --fail --silent --show-error --location \
-        "https://api.github.com/repos/$REPOSITORY/releases?per_page=10")
+    release_api=${SMARTTYPE_RELEASE_API_URL:-https://api.github.com/repos/$REPOSITORY/releases/latest}
+    release_json=$(curl --fail --silent --show-error --location --retry 3 "$release_api")
     VERSION=$(sed -n 's/^[[:space:]]*"tag_name": "\([^"]*\)",$/\1/p' <<<"$release_json" | head -n1)
     [[ -n $VERSION ]] || { echo "Could not resolve a SmartType release tag." >&2; exit 1; }
 fi
 
 archive="smarttype-${VERSION}-${TARGET}-${ARCH}.tar.gz"
-base_url="https://github.com/$REPOSITORY/releases/download/$VERSION"
+base_url=${SMARTTYPE_RELEASE_BASE_URL:-https://github.com/$REPOSITORY/releases/download/$VERSION}
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
@@ -85,7 +100,27 @@ curl --fail --show-error --location --retry 3 -o "$tmpdir/$archive" "$base_url/$
 curl --fail --show-error --location --retry 3 -o "$tmpdir/$archive.sha256" "$base_url/$archive.sha256"
 
 echo "==> Verifying SHA-256 checksum"
-(cd "$tmpdir" && sha256sum --check "$archive.sha256")
+checksum_lines=$(grep -cve '^[[:space:]]*$' "$tmpdir/$archive.sha256")
+expected_hash=$(awk 'NF { print $1; exit }' "$tmpdir/$archive.sha256")
+expected_name=$(awk 'NF { print $2; exit }' "$tmpdir/$archive.sha256")
+expected_name=${expected_name#\*}
+if [[ $checksum_lines -ne 1 || ! $expected_hash =~ ^[0-9a-fA-F]{64}$ || $expected_name != "$archive" ]]; then
+    echo "Invalid checksum file for $archive" >&2
+    exit 1
+fi
+actual_hash=$(sha256sum "$tmpdir/$archive" | awk '{print $1}')
+[[ ${actual_hash,,} == ${expected_hash,,} ]] || {
+    echo "SHA-256 mismatch for $archive" >&2
+    exit 1
+}
+echo "$archive: OK"
+
+tar -tzf "$tmpdir/$archive" > "$tmpdir/archive-contents"
+while IFS= read -r entry; do
+    case "$entry" in
+        /*|../*|*/../*|*/..) echo "Unsafe path in release archive: $entry" >&2; exit 1 ;;
+    esac
+done < "$tmpdir/archive-contents"
 tar -xzf "$tmpdir/$archive" -C "$tmpdir"
 bundle_dir="$tmpdir/${archive%.tar.gz}"
 [[ -x "$bundle_dir/install.sh" && -d "$bundle_dir/payload" ]] || {

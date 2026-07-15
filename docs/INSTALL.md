@@ -2,11 +2,11 @@
 
 ## Supported scope
 
-SmartType is an Fcitx 5 input-method addon. The verified release environments
-are Fedora 44 KDE Wayland, Ubuntu 26.04 KDE Wayland, and Kali Rolling
-Xfce/X11. The native X11 renderer is built by default. GNOME-specific
-integration, XWayland, Ubuntu 24.04, Arch, and the Fcitx client-side input-panel
-path remain unsupported release targets.
+SmartType is an Fcitx 5 input-method addon. The release environments are
+Fedora 44 KDE/GNOME Wayland, Ubuntu 26.04 KDE/GNOME Wayland, and Kali Rolling
+Xfce/X11. The native X11 renderer is built by default. XWayland, Ubuntu 24.04,
+Arch, and the Fcitx client-side input-panel path remain unsupported release
+targets.
 
 Do not use Flatpak or AppImage for the addon: a sandboxed application cannot
 install a shared addon into the host Fcitx process. Use the checksum-verified
@@ -26,6 +26,24 @@ configures the matching Fcitx integration, adds SmartType English/Russian to
 the existing Fcitx group without deleting other input methods, and enables the
 tray services. The original Fcitx profile is saved once as
 `~/.config/fcitx5/profile.before-smarttype`.
+
+When the bootstrap is piped to Bash, package-manager confirmations are handled
+non-interactively so they cannot consume the script input. `sudo` may still ask
+for the user's password through the terminal; SmartType never reads or stores it.
+
+On GNOME Wayland the installer makes Fcitx the session input method, enables
+its IBus frontend, and installs the Kimpanel GNOME Shell extension for the
+candidate popup. The extension source is pinned to a known upstream commit and
+verified by SHA-256 before it enters a release bundle. The existing GNOME
+extension list and unrelated Fcitx settings are preserved. GNOME uses its own
+candidate renderer, so the panel can look slightly different from KDE while
+typing, correction, candidate selection and Backspace behavior remain the same.
+
+Ubuntu Firefox Snap is a known exception: its bundled legacy `fcitx4` GTK
+module requests `ClientSideInputPanel`, so Firefox owns the candidate popup.
+SmartType corrections still run, but Kimpanel cannot correct that popup's
+placement. Use a normal GNOME GTK/Qt application for the release-grade panel
+check; do not claim the Firefox Snap client-side renderer as Kimpanel coverage.
 
 Log out and back in once after the first installation. SmartType English is
 selected by default. The normal path does not install compilers or development
@@ -82,6 +100,18 @@ options, assigns Alt+Shift to Fcitx, and writes a managed `.xprofile` block for
 the GTK/Qt Fcitx modules. Log out or reboot before testing; already-running
 applications retain their old input module.
 
+For a manual GNOME Wayland source install use:
+
+```bash
+./install.sh --build-from-source --mode gnome-wayland
+```
+
+The root `install.sh` and the one-line release installer select this mode
+automatically; the manual sequence is intended for installer development.
+Log out and back in after installation because GNOME Shell and newly started
+applications must inherit the Fcitx environment. Do not enable the KDE layout
+bridge in a GNOME session.
+
 For the optional KDE-only Alt+Shift bridge:
 
 ```bash
@@ -121,6 +151,13 @@ testing: rebuild and reinstall first.
 It must also report that both `GTK_IM_MODULE` and `QT_IM_MODULE` use `fcitx`.
 An application reporting `frontend:xim` is a fallback context and is not a
 release-grade inline-preedit verification.
+
+On GNOME Wayland, `doctor.sh` must report the Kimpanel extension, the Fcitx
+autostart entry, enabled `kimpanel` and `ibusfrontend` addons, disabled
+`smarttypeui`, the GTK/Qt Fcitx modules, and the four managed input-method
+environment variables. If the
+extension was enabled for the first time, log out and back in before treating a
+missing popup as a defect.
 
 Select **SmartType Русский** and **SmartType Английский** in Fcitx. Then check
 typing, a candidate click, and a click elsewhere while candidates are visible:

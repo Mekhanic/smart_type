@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(smarttype VERSION 0.1.0 LANGUAGES C CXX)
+project(smarttype VERSION 0.2.0 LANGUAGES C CXX)
 
 include(GNUInstallDirs)
 
@@ -55,6 +55,7 @@ target_link_libraries(smarttypectl PRIVATE smarttype_core)
 install(TARGETS smarttypectl smarttype-eval DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(PROGRAMS scripts/fcitx5-layout-sync.py DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(PROGRAMS scripts/configure-fcitx-x11.py DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(PROGRAMS scripts/configure-fcitx-gnome.py DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(PROGRAMS scripts/configure-fcitx-profile.py DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(PROGRAMS scripts/doctor.sh scripts/uninstall-user.sh
         DESTINATION ${CMAKE_INSTALL_DATADIR}/smarttype)
@@ -70,6 +71,11 @@ install(DIRECTORY "${PROJECT_SOURCE_DIR}/themes/smarttype-liquid-glass/"
 enable_testing()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(
+    NAME gnome-fcitx-config
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/configure_fcitx_gnome_tests.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/scripts/configure-fcitx-gnome.py)
+add_test(
     NAME x11-fcitx-config
     COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/configure_fcitx_x11_tests.py
@@ -84,6 +90,9 @@ add_test(
     COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/configure_fcitx_profile_tests.py
             ${CMAKE_CURRENT_SOURCE_DIR}/scripts/configure-fcitx-profile.py)
+add_test(
+    NAME release-bootstrap
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/install_release_tests.sh)
 
 option(SMARTTYPE_BUILD_FCITX "Build the Fcitx5 input method addon" ON)
 option(SMARTTYPE_BUILD_UI_DEMO "Build the legacy standalone Qt 6/QML candidate UI prototype" OFF)

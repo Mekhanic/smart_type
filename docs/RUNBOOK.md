@@ -88,6 +88,35 @@ Mousepad, Firefox and Kate should report focused `frontend:dbus` contexts.
 `frontend:xim` is only a fallback: do not accept a server-side preedit row in
 the candidate popup as successful inline input.
 
+### GNOME Wayland candidate panel missing
+
+GNOME does not use the KDE layout bridge or the internal `smarttypeui` popup.
+Run the installed doctor first:
+
+```bash
+~/.local/share/smarttype/doctor.sh
+gnome-extensions info kimpanel@kde.org
+gsettings get org.gnome.shell enabled-extensions
+fcitx5-diagnose
+```
+
+Healthy GNOME output has `kimpanel` and `ibusfrontend` enabled,
+`smarttypeui` disabled, the Kimpanel extension enabled and loaded, and
+`fcitx5-layout-sync.service` inactive and `GTK_IM_MODULE=fcitx`.
+Log out and back in after installation;
+restarting only Fcitx cannot make an already-running GNOME Shell discover a
+new extension reliably. If user extensions are globally disabled, re-enable
+them in GNOME Extensions instead of changing SmartType's renderer.
+
+While testing, the composing word must remain in the browser/editor field.
+Kimpanel contains candidates only. A second editable row inside the popup is a
+failure and must not be accepted as a GNOME fallback.
+
+Ubuntu Firefox Snap may report `frontend:fcitx4` and request
+`ClientSideInputPanel`. In that case its bundled legacy GTK module, rather than
+Kimpanel, owns the popup. Corrections still run through SmartType, but popup
+placement can differ and cannot be repaired by changing the GNOME extension.
+
 ### Layout stuck: Alt+Shift changes only the system indicator (ST-020)
 
 SmartType uses **two Fcitx input methods** (`smarttype-us` / `smarttype`). Plasma **Alt+Shift** only toggles the KDE layout index (`org.kde.keyboard`). The bridge process is required:
@@ -117,7 +146,7 @@ Do **not** fix this by restarting `fcitx5` first — start `fcitx5-layout-sync` 
 
 1. `systemctl --user is-enabled smarttype-tray.service` → `enabled`
 2. `systemctl --user is-active smarttype-tray.service` → `active`
-3. `systemctl --user is-active fcitx5-layout-sync.service` → `active`
+3. KDE/X11: `fcitx5-layout-sync.service` → `active`; GNOME: → `inactive`
 4. `fcitx5-remote -n` → `smarttype` or `smarttype-us`
 5. Kate: Alt+Shift twice — language of typed characters must follow
 6. `./scripts/doctor.sh` — no FAIL (owned tray process + layout-sync + session IM)

@@ -37,7 +37,7 @@ jobs:
       - name: Install Fedora build dependencies
         if: matrix.family == 'fedora'
         run: >-
-          dnf --setopt=install_weak_deps=False install -y git gcc-c++ cmake ninja-build python3 tar gzip sqlite-devel glibc-gconv-extra
+          dnf --setopt=install_weak_deps=False install -y git curl gcc-c++ cmake ninja-build python3 tar gzip sqlite-devel glibc-gconv-extra
           fcitx5 fcitx5-devel hunspell hunspell-ru qt6-qtbase-devel
           qt6-qtdeclarative-devel pkgconf-pkg-config cairo-devel pango-devel
           gdk-pixbuf2-devel glib2-devel wayland-devel wayland-protocols-devel
@@ -49,7 +49,7 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           apt-get update
-          apt-get install -y git build-essential cmake ninja-build pkg-config python3 tar gzip \
+          apt-get install -y git curl build-essential cmake ninja-build pkg-config python3 tar gzip \
             libsqlite3-dev fcitx5 libfcitx5core-dev libfcitx5utils-dev \
             libfcitx5config-dev fcitx5-modules-dev fcitx5-frontend-qt6 \
             fcitx5-frontend-gtk3 fcitx5-config-qt hunspell hunspell-ru hunspell-en-us \
@@ -63,8 +63,11 @@ jobs:
 
       - name: Build, test, and package
         env:
-          RELEASE_VERSION: ${{ github.event_name == 'pull_request' && 'v0.0.0' || inputs.version || github.ref_name }}
+          RELEASE_VERSION: ${{ inputs.version || (github.event_name == 'pull_request' && 'source') || github.ref_name }}
         run: scripts/build-release-bundle.sh "$RELEASE_VERSION" "${{ matrix.target }}" dist
+
+      - name: Test one-line release bootstrap
+        run: tests/install_release_tests.sh
 
       - name: Upload release bundle
         uses: actions/upload-artifact@v6
@@ -94,6 +97,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "SmartType $TAG" --generate-notes
-          gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; refusing to replace immutable assets." >&2
+            exit 1
+          fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft \
+            --title "SmartType $TAG" --generate-notes
+          gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY"
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
