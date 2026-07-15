@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPOSITORY=${SMARTTYPE_GITHUB_REPOSITORY:-Mekhanic/smart_type}
-VERSION=${SMARTTYPE_VERSION:-}
+RELEASE_VERSION=${SMARTTYPE_VERSION:-}
 MODE=auto
 INSTALL_DEPS=1
 ASSUME_YES=0
@@ -22,7 +22,7 @@ while (($#)); do
     case "$1" in
         --version)
             [[ $# -ge 2 ]] || { echo "--version requires a value" >&2; exit 2; }
-            VERSION=$2
+            RELEASE_VERSION=$2
             shift
             ;;
         --mode)
@@ -63,9 +63,10 @@ esac
 
 TARGET=${SMARTTYPE_RELEASE_TARGET:-}
 if [[ -z $TARGET ]]; then
-    [[ -r /etc/os-release ]] || { echo "Cannot identify this Linux distribution." >&2; exit 1; }
+    os_release_file=${SMARTTYPE_OS_RELEASE_FILE:-/etc/os-release}
+    [[ -r $os_release_file ]] || { echo "Cannot identify this Linux distribution." >&2; exit 1; }
     # shellcheck source=/dev/null
-    . /etc/os-release
+    . "$os_release_file"
     case "${ID:-}:${VERSION_ID:-}" in
         fedora:44) TARGET=fedora44 ;;
         ubuntu:26.04) TARGET=ubuntu2604 ;;
@@ -82,20 +83,20 @@ case "$TARGET" in
     *) echo "Invalid SmartType release target: $TARGET" >&2; exit 2 ;;
 esac
 
-if [[ -z $VERSION ]]; then
+if [[ -z $RELEASE_VERSION ]]; then
     echo "==> Resolving the newest SmartType release"
     release_api=${SMARTTYPE_RELEASE_API_URL:-https://api.github.com/repos/$REPOSITORY/releases/latest}
     release_json=$(curl --fail --silent --show-error --location --retry 3 "$release_api")
-    VERSION=$(sed -n 's/^[[:space:]]*"tag_name": "\([^"]*\)",$/\1/p' <<<"$release_json" | head -n1)
-    [[ -n $VERSION ]] || { echo "Could not resolve a SmartType release tag." >&2; exit 1; }
+    RELEASE_VERSION=$(sed -n 's/^[[:space:]]*"tag_name": "\([^"]*\)",$/\1/p' <<<"$release_json" | head -n1)
+    [[ -n $RELEASE_VERSION ]] || { echo "Could not resolve a SmartType release tag." >&2; exit 1; }
 fi
 
-archive="smarttype-${VERSION}-${TARGET}-${ARCH}.tar.gz"
-base_url=${SMARTTYPE_RELEASE_BASE_URL:-https://github.com/$REPOSITORY/releases/download/$VERSION}
+archive="smarttype-${RELEASE_VERSION}-${TARGET}-${ARCH}.tar.gz"
+base_url=${SMARTTYPE_RELEASE_BASE_URL:-https://github.com/$REPOSITORY/releases/download/$RELEASE_VERSION}
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
-echo "==> Downloading SmartType $VERSION for $TARGET"
+echo "==> Downloading SmartType $RELEASE_VERSION for $TARGET"
 curl --fail --show-error --location --retry 3 -o "$tmpdir/$archive" "$base_url/$archive"
 curl --fail --show-error --location --retry 3 -o "$tmpdir/$archive.sha256" "$base_url/$archive.sha256"
 

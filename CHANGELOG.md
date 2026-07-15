@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 - 2026-07-15
+
+- Fixed the one-line release bootstrap on real distributions: sourcing
+  `/etc/os-release` no longer overwrites the GitHub release tag through its
+  standard `VERSION` variable.
+- Added an end-to-end regression fixture containing the conflicting
+  `VERSION="..."` field before publishing the patch release.
+
 ## 0.2.0 - 2026-07-15
 
 - Added GNOME Wayland integration for Fedora 44 and Ubuntu 26.04.

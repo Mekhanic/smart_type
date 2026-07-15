@@ -5,7 +5,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 TEST_ROOT=$(mktemp -d)
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
-VERSION=v0.2.0
+VERSION=v0.2.1
 TARGET=fedora44
 ARCHIVE="smarttype-${VERSION}-${TARGET}-x86_64.tar.gz"
 BUNDLE="${ARCHIVE%.tar.gz}"
@@ -28,9 +28,15 @@ cat > "$TEST_ROOT/latest.json" <<EOF
 EOF
 
 ARGS_FILE="$TEST_ROOT/installer-args"
+cat > "$TEST_ROOT/os-release" <<'EOF'
+ID=fedora
+VERSION_ID=44
+VERSION="44 (Workstation Edition)"
+PRETTY_NAME="Fedora Linux 44"
+EOF
 SMARTTYPE_RELEASE_API_URL="file://$TEST_ROOT/latest.json" \
 SMARTTYPE_RELEASE_BASE_URL="file://$RELEASE_DIR" \
-SMARTTYPE_RELEASE_TARGET="$TARGET" \
+SMARTTYPE_OS_RELEASE_FILE="$TEST_ROOT/os-release" \
 SMARTTYPE_TEST_ARGS="$ARGS_FILE" \
     "$ROOT/scripts/install-release.sh" --mode gnome-wayland --skip-deps
 
@@ -43,7 +49,7 @@ grep -Fxq -- '--yes' "$ARGS_FILE"
 printf 'corruption' >> "$RELEASE_DIR/$ARCHIVE"
 if SMARTTYPE_VERSION="$VERSION" \
    SMARTTYPE_RELEASE_BASE_URL="file://$RELEASE_DIR" \
-   SMARTTYPE_RELEASE_TARGET="$TARGET" \
+   SMARTTYPE_OS_RELEASE_FILE="$TEST_ROOT/os-release" \
    SMARTTYPE_TEST_ARGS="$ARGS_FILE" \
        "$ROOT/scripts/install-release.sh" --skip-deps >/dev/null 2>&1; then
     echo "Corrupted release archive passed checksum verification" >&2
