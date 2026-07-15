@@ -244,6 +244,20 @@ Visual and interaction verification of native Wayland candidate panel:
 | Ubuntu 26.04 bundle build, complete CTest, staged user install and invalid-payload rejection | **PASS**, 12/12 + installer smoke |
 | Kali Rolling bundle build, complete CTest, staged user install and invalid-payload rejection | **PASS**, 12/12 + installer smoke |
 
+## GNOME Wayland release integration (2026-07-15)
+
+| Check | Result |
+|---|---|
+| GNOME Fcitx configuration unit test | **PASS** — addon selection, Alt+Shift, shared state, environment preservation, autostart backup and idempotency |
+| Complete local CTest suite | **PASS**, 14/14 including release-bootstrap (Unix-socket integration run outside the restricted agent sandbox) |
+| Pinned Kimpanel source integrity | **PASS** — upstream commit `ff828412608da89d8ede464c85649659a19a7650`, verified archive SHA-256, GNOME Shell 48/49/50 metadata |
+| Fedora 44 release bundle with GNOME payload | **PASS** — complete build, 14/14, payload manifest, normal install smoke and isolated GNOME install smoke |
+| Ubuntu 26.04 release container | **PASS** — clean container build, 13/13, manifest verification and normal/GNOME staged installer smoke |
+| Ubuntu 26.04 GNOME Wayland install + cold login | **PASS** — Fcitx `-d --replace`, tray service, Kimpanel/AppIndicator, profile order and doctor survived reboot |
+| Ubuntu 26.04 GNOME Text Editor | **PASS** — inline `сево`, candidates, `севодня ` → `сегодня ` and immediate Backspace revert |
+| Ubuntu Firefox Snap | **LIMITATION** — SmartType correction path works through bundled `frontend:fcitx4`, but its requested `ClientSideInputPanel` owns and can misplace the popup; Kimpanel cannot reposition it |
+| Fedora 44 GNOME live desktop | **PENDING** — container/release bundle passes; real GNOME session remains an owner release check |
+
 ---
 
 ## ST-017: Layout logical IM sync

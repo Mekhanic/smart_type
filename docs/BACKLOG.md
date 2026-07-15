@@ -34,6 +34,8 @@ These are verification checks, not presumed bugs:
 - **Controlled Chrome field check** — in the original dynamic city/region combobox, type `Махачкала`; the value must contain exactly `Махачкала`, with no cumulative prefixes.
 - **Original-field tray/icon visual check** — reboot persistence now passes on Ubuntu KDE and Kali Xfce; the owner should still confirm the intended icon appearance in their production desktop panel.
 - **Kali X11 owner visual pass** — automated live control passed in Mousepad, Firefox ESR and Kate with toolkit-inline preedit. The owner should repeat natural typing in the applications intended for the release claim; raw XIM remains compatibility-only.
+- **Fedora GNOME owner visual pass** — the Fedora 44 GNOME bundle and configuration are release-tested automatically; repeat the Ubuntu GNOME browser/editor checks on a real Fedora GNOME Wayland session before strengthening the claim beyond the exact automated coverage.
+- **Ubuntu Firefox Snap client-side panel** — corrections reach SmartType through the bundled `frontend:fcitx4`, but Firefox requests `ClientSideInputPanel` and can place its popup away from the caret. Investigate only in the client-side renderer/toolkit path; Kimpanel changes cannot affect it.
 
 If either check fails, reopen its existing ticket with the new evidence. If it passes, record the result in
 `TEST_MATRIX.md`; no follow-up task is needed.
@@ -45,7 +47,6 @@ If either check fails, reopen its existing ticket with the new evidence. If it p
 - additional sentence-capitalization work;
 - client-side renderer styling research;
 - XWayland coordinate mapping and support;
-- GNOME/non-KDE portability;
 - long-session performance work;
 - native RPM/DEB package recipes (checksum-verified per-distro release bundles are implemented first).
 

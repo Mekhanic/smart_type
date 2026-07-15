@@ -8,14 +8,18 @@ BUILD_JOBS="${SMARTTYPE_BUILD_JOBS:-2}"
 ENABLE_KDE_LAYOUT_SYNC=0
 ENABLE_KDE_WAYLAND_IME=0
 ENABLE_X11_LAYOUT_SYNC=0
+ENABLE_GNOME_WAYLAND=0
 DISABLE_KIMPANEL=0
+APPINDICATOR_UUID=
 CONFIGURE_PROFILE=1
 PREBUILT_DIR=
 
 usage() {
     cat <<'EOF'
 Usage: scripts/install-user.sh [--enable-kde-layout-sync] [--enable-kde-wayland-ime]
+                               [--enable-gnome-wayland]
                                [--enable-x11-layout-sync] [--disable-kimpanel]
+                               [--appindicator-uuid UUID]
                                [--no-configure-profile] [--prebuilt-dir DIR]
 
 Builds and installs SmartType into $HOME/.local by default. It does not install
@@ -30,8 +34,14 @@ while (($#)); do
     case "$1" in
         --enable-kde-layout-sync) ENABLE_KDE_LAYOUT_SYNC=1 ;;
         --enable-kde-wayland-ime) ENABLE_KDE_WAYLAND_IME=1 ;;
+        --enable-gnome-wayland) ENABLE_GNOME_WAYLAND=1 ;;
         --enable-x11-layout-sync) ENABLE_X11_LAYOUT_SYNC=1 ;;
         --disable-kimpanel) DISABLE_KIMPANEL=1 ;;
+        --appindicator-uuid)
+            [[ $# -ge 2 ]] || { echo "--appindicator-uuid requires a value" >&2; exit 2; }
+            APPINDICATOR_UUID=$2
+            shift
+            ;;
         --no-configure-profile) CONFIGURE_PROFILE=0 ;;
         --prebuilt-dir)
             [[ $# -ge 2 ]] || { echo "--prebuilt-dir requires a value" >&2; exit 2; }
@@ -44,8 +54,9 @@ while (($#)); do
     shift
 done
 
-if (( ENABLE_KDE_LAYOUT_SYNC && ENABLE_X11_LAYOUT_SYNC )); then
-    echo "Choose only one layout owner: KDE Wayland or X11/Fcitx." >&2
+integration_modes=$((ENABLE_KDE_WAYLAND_IME + ENABLE_X11_LAYOUT_SYNC + ENABLE_GNOME_WAYLAND))
+if (( integration_modes > 1 )); then
+    echo "Choose only one desktop integration: KDE Wayland, GNOME Wayland, or X11/Fcitx." >&2
     exit 2
 fi
 
@@ -54,11 +65,19 @@ command -v fcitx5 >/dev/null || {
     exit 1
 }
 
+# Upgrades replace the tray executable in place. Linux rejects truncating a
+# currently executing binary with ETXTBSY, so stop the service before copying
+# a prebuilt payload. It is enabled and started again after the new unit is
+# installed below.
+systemctl --user stop smarttype-tray.service 2>/dev/null || true
+pkill -x smarttype-tray 2>/dev/null || true
+
 if [[ -n $PREBUILT_DIR ]]; then
     required=(
         bin/smarttypectl
         bin/smarttype-tray
         bin/configure-fcitx-profile.py
+        bin/configure-fcitx-gnome.py
         bin/configure-fcitx-x11.py
         bin/fcitx5-layout-sync.py
         lib/fcitx5/smarttype.so
@@ -77,7 +96,10 @@ if [[ -n $PREBUILT_DIR ]]; then
     done
     echo "==> Installing verified prebuilt SmartType files into $PREFIX"
     mkdir -p "$PREFIX"
-    cp -a "$PREBUILT_DIR/." "$PREFIX/"
+    # Replace existing executables and shared objects by inode instead of
+    # truncating files that may still be mapped by a running tray/Fcitx
+    # process. The old process keeps its old inode until the final reload.
+    cp -a --remove-destination "$PREBUILT_DIR/." "$PREFIX/"
 else
     cmake_args=(-S "$ROOT" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release
                 -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_INSTALL_LIBDIR=lib
@@ -94,6 +116,16 @@ else
     cmake --install "$BUILD"
 fi
 
+KIMPANEL_SOURCE="$PREFIX/share/smarttype/gnome/kimpanel@kde.org"
+if (( ENABLE_GNOME_WAYLAND )) && [[ ! -f $KIMPANEL_SOURCE/metadata.json ]]; then
+    PREPARE_KIMPANEL="$ROOT/scripts/prepare-gnome-kimpanel.sh"
+    [[ -x $PREPARE_KIMPANEL ]] || {
+        echo "FAIL  missing GNOME Kimpanel preparation helper: $PREPARE_KIMPANEL" >&2
+        exit 1
+    }
+    "$PREPARE_KIMPANEL" "$KIMPANEL_SOURCE"
+fi
+
 # Retire every historical state-specific icon. The tray now embeds its two
 # theme variants, while the desktop launcher uses only smarttype-idle.png.
 rm -f \
@@ -106,7 +138,7 @@ rm -f \
 
 if (( CONFIGURE_PROFILE )); then
     "$PREFIX/bin/configure-fcitx-profile.py" \
-        "${XDG_CONFIG_HOME:-$HOME/.config}/fcitx5/profile"
+        "${XDG_CONFIG_HOME:-$HOME/.config}/fcitx5/profile" --apply-live
     echo "OK  SmartType Русский и SmartType English добавлены в профиль Fcitx."
 fi
 
@@ -140,6 +172,55 @@ cat > "$HOME/.config/environment.d/90-smarttype.conf" <<EOF
 FCITX_ADDON_DIRS=$addon_dirs_joined
 XMODIFIERS=@im=fcitx
 EOF
+
+if (( ENABLE_GNOME_WAYLAND )); then
+    GNOME_CONFIGURATOR="$PREFIX/bin/configure-fcitx-gnome.py"
+    [[ -x $GNOME_CONFIGURATOR ]] || {
+        echo "FAIL  missing installed GNOME configurator: $GNOME_CONFIGURATOR" >&2
+        exit 1
+    }
+    [[ -f $KIMPANEL_SOURCE/metadata.json ]] || {
+        echo "FAIL  release payload does not contain the pinned GNOME Kimpanel extension" >&2
+        exit 1
+    }
+
+    GNOME_EXTENSION_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/kimpanel@kde.org"
+    GNOME_EXTENSION_BACKUP="${GNOME_EXTENSION_DIR}.before-smarttype"
+    GNOME_EXTENSION_STATE="$GNOME_EXTENSION_DIR/.smarttype-managed"
+    kimpanel_was_enabled=0
+    appindicator_was_enabled=0
+    if [[ -f $GNOME_EXTENSION_STATE ]]; then
+        grep -qx 'kimpanel_was_enabled=1' "$GNOME_EXTENSION_STATE" && kimpanel_was_enabled=1
+        grep -qx 'appindicator_was_enabled=1' "$GNOME_EXTENSION_STATE" && appindicator_was_enabled=1
+    else
+        enabled_extensions=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || true)
+        [[ $enabled_extensions == *kimpanel@kde.org* ]] && kimpanel_was_enabled=1
+        [[ -n $APPINDICATOR_UUID && $enabled_extensions == *"$APPINDICATOR_UUID"* ]] && appindicator_was_enabled=1
+    fi
+    if [[ -e $GNOME_EXTENSION_DIR && ! -f $GNOME_EXTENSION_DIR/.smarttype-managed && ! -e $GNOME_EXTENSION_BACKUP ]]; then
+        mv "$GNOME_EXTENSION_DIR" "$GNOME_EXTENSION_BACKUP"
+    fi
+    rm -rf "$GNOME_EXTENSION_DIR"
+    mkdir -p "$(dirname "$GNOME_EXTENSION_DIR")"
+    cp -a "$KIMPANEL_SOURCE" "$GNOME_EXTENSION_DIR"
+    printf 'kimpanel_was_enabled=%s\nappindicator_uuid=%s\nappindicator_was_enabled=%s\n' \
+        "$kimpanel_was_enabled" "$APPINDICATOR_UUID" "$appindicator_was_enabled" \
+        > "$GNOME_EXTENSION_STATE"
+
+    systemctl --user disable --now fcitx5-layout-sync.service >/dev/null 2>&1 || true
+    # GNOME keeps one compositor XKB source while Fcitx cycles the two
+    # SmartType methods. Normalize incoming Latin/Cyrillic keysyms to the
+    # selected method so RU/EN changes immediately without a KDE layout bridge.
+    "$PREFIX/bin/smarttypectl" set-setting x11_normalize_layout true
+    "$GNOME_CONFIGURATOR" \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/fcitx5/config" \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/fcitx5/conf" \
+        "$HOME/.config/environment.d/90-smarttype.conf" \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/org.fcitx.Fcitx5.desktop" \
+        --enable-session-extensions --appindicator-uuid "$APPINDICATOR_UUID"
+    echo "OK  GNOME will start Fcitx through its IBus frontend after the next login."
+    echo "OK  Kimpanel and AppIndicator extensions are enabled without removing other extensions."
+fi
 
 # KDE Wayland must be the sole launcher of Fcitx so KWin can pass the
 # one-shot input-method socket. The normal XDG autostart and an early
@@ -262,7 +343,7 @@ if (( CONFIGURE_PROFILE )); then
 else
     echo "Добавьте SmartType English и SmartType Русский через fcitx5-configtool."
 fi
-if (( ! ENABLE_KDE_LAYOUT_SYNC && ! ENABLE_X11_LAYOUT_SYNC )); then
+if (( ! ENABLE_KDE_LAYOUT_SYNC && ! ENABLE_X11_LAYOUT_SYNC && ! ENABLE_GNOME_WAYLAND )); then
     echo "KDE Alt+Shift bridge was not enabled. On KDE, opt in with: scripts/install-user.sh --enable-kde-layout-sync"
 fi
 if (( ENABLE_X11_LAYOUT_SYNC )); then
@@ -302,4 +383,7 @@ if (( CONFIGURE_PROFILE )) && command -v fcitx5-remote >/dev/null; then
 fi
 if (( ENABLE_KDE_WAYLAND_IME )); then
     echo "Log out and back in before testing; do not restart Fcitx from its tray on Wayland."
+fi
+if (( ENABLE_GNOME_WAYLAND )); then
+    echo "Log out and back in before testing GNOME applications and the candidate panel."
 fi

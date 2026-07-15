@@ -16,7 +16,8 @@ By default SmartType downloads a checksum-verified prebuilt release. No
 compiler is needed on the user's computer.
 
 Options:
-  --mode auto|kde-wayland|x11  Override graphical-session detection
+  --mode auto|kde-wayland|gnome-wayland|x11
+                               Override graphical-session detection
   --skip-deps                  Do not install distribution runtime packages
   --build-from-source          Compile and test locally (developer fallback)
   --prebuilt-dir DIR           Install an already extracted release payload
@@ -25,7 +26,9 @@ Options:
 
 Verified release environments:
   Fedora 44 KDE Plasma / Wayland (x86_64)
+  Fedora 44 GNOME / Wayland (x86_64)
   Ubuntu 26.04 KDE Plasma / Wayland (x86_64)
+  Ubuntu 26.04 GNOME / Wayland (x86_64)
   Kali Rolling Xfce / X11 (x86_64)
 EOF
 }
@@ -51,7 +54,7 @@ while (($#)); do
     shift
 done
 
-case "$MODE" in auto|kde-wayland|x11) ;; *) echo "Unsupported mode: $MODE" >&2; exit 2 ;; esac
+case "$MODE" in auto|kde-wayland|gnome-wayland|x11) ;; *) echo "Unsupported mode: $MODE" >&2; exit 2 ;; esac
 [[ -r /etc/os-release ]] || { echo "Cannot identify this Linux distribution." >&2; exit 1; }
 # shellcheck source=/dev/null
 . /etc/os-release
@@ -78,6 +81,8 @@ detect_mode() {
     desktop=${desktop,,}
     if [[ $session == wayland && $desktop == *kde* ]]; then
         echo kde-wayland
+    elif [[ $session == wayland && ( $desktop == *gnome* || $desktop == *ubuntu* ) ]]; then
+        echo gnome-wayland
     elif [[ $session == x11 ]]; then
         echo x11
     else
@@ -94,12 +99,12 @@ TARGET=$(detect_target) || {
 if [[ $MODE == auto ]]; then MODE=$(detect_mode); fi
 if [[ $MODE == unknown ]]; then
     echo "Cannot detect a supported graphical session." >&2
-    echo "Run this inside KDE Wayland or X11, or pass --mode explicitly." >&2
+    echo "Run this inside KDE/GNOME Wayland or X11, or pass --mode explicitly." >&2
     exit 1
 fi
 
 case "$TARGET:$MODE" in
-    fedora44:kde-wayland|ubuntu2604:kde-wayland|kali-rolling:x11) ;;
+    fedora44:kde-wayland|fedora44:gnome-wayland|ubuntu2604:kde-wayland|ubuntu2604:gnome-wayland|kali-rolling:x11) ;;
     *)
         echo "${PRETTY_NAME:-$ID} with mode '$MODE' is not a verified release target." >&2
         exit 1
@@ -121,6 +126,9 @@ install_runtime_dependencies() {
             command+=(fcitx5 fcitx5-qt fcitx5-gtk fcitx5-configtool hunspell hunspell-ru glibc-gconv-extra
                 qt6-qtbase qt6-qtdeclarative cairo pango gdk-pixbuf2 glib2 wayland-libs
                 libxcb xcb-util xcb-util-wm xcb-util-keysyms)
+            if [[ $MODE == gnome-wayland ]]; then
+                command+=(fcitx5-autostart gnome-shell-extension-appindicator)
+            fi
             "${command[@]}"
             ;;
         ubuntu2604|kali-rolling)
@@ -132,6 +140,9 @@ install_runtime_dependencies() {
                 libqt6qml6 libcairo2 libpango-1.0-0 libgdk-pixbuf-2.0-0 libglib2.0-0
                 libwayland-client0 libxcb1 libxcb-util1 libxcb-icccm4 libxcb-xinerama0
                 libxcb-randr0 libxcb-ewmh2 libxcb-keysyms1)
+            if [[ $MODE == gnome-wayland && $TARGET == ubuntu2604 ]]; then
+                command+=(fcitx5-frontend-gtk4 gnome-shell-ubuntu-extensions)
+            fi
             "${command[@]}"
             ;;
     esac
@@ -175,6 +186,14 @@ install_args=()
 [[ -n $PREBUILT_DIR ]] && install_args+=(--prebuilt-dir "$PREBUILT_DIR")
 case "$MODE" in
     kde-wayland) install_args+=(--enable-kde-wayland-ime --enable-kde-layout-sync --disable-kimpanel) ;;
+    gnome-wayland)
+        install_args+=(--enable-gnome-wayland)
+        if [[ $TARGET == fedora44 ]]; then
+            install_args+=(--appindicator-uuid appindicatorsupport@rgcjonas.gmail.com)
+        else
+            install_args+=(--appindicator-uuid ubuntu-appindicators@ubuntu.com)
+        fi
+        ;;
     x11) install_args+=(--enable-x11-layout-sync --disable-kimpanel) ;;
 esac
 

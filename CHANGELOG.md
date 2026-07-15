@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 - 2026-07-15
+
+- Added GNOME Wayland integration for Fedora 44 and Ubuntu 26.04.
+- Added Fcitx IBus/Kimpanel configuration while keeping composition in the
+  focused application field.
+- Added a checksum-pinned upstream Kimpanel GNOME Shell extension to release
+  bundles and preserved existing GNOME extensions during configuration.
+- Hardened the one-line release installer with release lookup retries, strict
+  checksum parsing, archive path-traversal rejection, and pipe-safe package
+  installation.
+- Added automated GNOME configuration, idempotency and staged-install tests.
+
 ## 0.1.1 - 2026-07-15
 
 - Added checksum-verified prebuilt x86_64 bundles for Fedora 44, Ubuntu 26.04,

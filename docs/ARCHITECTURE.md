@@ -16,6 +16,7 @@ graph TD
 
     F -->|ClientSideInputPanel=true| G[Client-side toolkit renderer]
     F -->|ClientSideInputPanel=false + Wayland popup| H[Internal smarttypeui addon]
+    F -->|GNOME IBus frontend| I[Kimpanel GNOME Shell extension]
 ```
 
 ### 1. `smarttype_core`
@@ -52,6 +53,7 @@ Candidate rendering is dispatched via Fcitx's `UserInterfaceManager` based on co
 - **Client-Side Toolkit Rendering**: Triggered when `ClientSideInputPanel=true`. The candidate list is exported via a frontend-specific client-side UI mechanism (e.g., D-Bus for Qt), and the client toolkit's native IM-module manages UI rendering. The internal `smarttypeui` addon does not manage visual rendering on this path, but the engine supplies candidates, selection index, preedit text and formatting metadata; the frontend or toolkit decides which formatting it can render.
 - **Internal `smarttypeui` Rendering — Wayland**: Triggered when `ClientSideInputPanel=false` and `frontend=wayland/wayland_v2` (with native popup support). It creates a native Wayland input panel or popup surface.
 - **Internal `smarttypeui` Rendering — native X11**: When built with `SMARTTYPE_ENABLE_X11=ON`, the same addon contains `XCBUI`/`XCBInputWindow` and renders an override-redirect candidate window on the active X11 display. This path was restored on 2026-07-13 after the top-level build was found to force `ENABLE_X11=OFF` even though the renderer sources existed.
+- **GNOME Wayland — Fcitx IBus frontend + Kimpanel**: GNOME owns the Wayland input-method protocol and does not expose KDE's input-panel protocol. SmartType therefore enables Fcitx's `ibusfrontend` and `kimpanel` addons, disables `smarttypeui`, and lets the Kimpanel GNOME Shell extension render only the candidates. Application composition still travels through the Fcitx GTK/Qt frontend into the focused widget; the popup is never used as a text editor. GNOME retains one compositor XKB source, so the engine normalizes physical keysyms to the active `smarttype-us`/`smarttype` method instead of running the KDE layout bridge.
 - **Unsupported/Fallback Configurations**: XWayland input contexts inside a Wayland session still have uncertain cross-coordinate positioning and are not a supported release path. A client-side toolkit renderer may still be used when the input context advertises `ClientSideInputPanel`.
 - **Legacy/Experimental**: The external `smarttype-ui` QML process is legacy/experimental and not considered a current supported path.
 

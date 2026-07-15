@@ -64,9 +64,9 @@ fi
 # Accept install-user name (90-smarttype.conf) or hand-named drop-ins with FCITX_ADDON_DIRS.
 if [[ -f "$HOME/.config/environment.d/90-smarttype.conf" ]] ||
    grep -Rqs 'FCITX_ADDON_DIRS=' "$HOME/.config/environment.d/" 2>/dev/null; then
-    printf 'OK    KDE environment configuration (FCITX_ADDON_DIRS)\n'
+    printf 'OK    SmartType environment configuration (FCITX_ADDON_DIRS)\n'
 else
-    printf 'FAIL  KDE environment configuration (no FCITX_ADDON_DIRS in environment.d)\n'
+    printf 'FAIL  SmartType environment configuration (no FCITX_ADDON_DIRS in environment.d)\n'
     printf '      Fix: re-run scripts/install-user.sh\n'
     fail=1
 fi
@@ -75,7 +75,7 @@ fcitx_pid=$(pgrep -n -x fcitx5 2>/dev/null || true)
 if [[ -n $fcitx_pid ]]; then
     printf 'OK    fcitx5 process is running\n'
 else
-    printf 'WARN  fcitx5 is not running; select it in KDE Virtual Keyboard and relogin\n'
+    printf 'WARN  fcitx5 is not running; check desktop integration and relogin\n'
 fi
 
 if systemctl --user is-enabled --quiet smarttype-tray.service 2>/dev/null; then
@@ -119,7 +119,86 @@ elif [[ ${session_type,,} != wayland ]] &&
     # tty even though the user manager still owns an X11 desktop.
     x11_session=1
 fi
-if [[ ${desktop_name,,} == *kde* || ${desktop_name,,} == *plasma* ]]; then
+gnome_session=0
+if [[ ${desktop_name,,} == *gnome* || ${desktop_name,,} == *ubuntu* ]]; then
+    gnome_session=1
+fi
+
+if (( gnome_session )); then
+    if [[ ${session_type,,} == wayland ]]; then
+        printf 'OK    GNOME session uses Wayland\n'
+    else
+        printf 'FAIL  GNOME release integration expects Wayland, got %s\n' "${session_type:-unknown}"
+        fail=1
+    fi
+    if systemctl --user is-active --quiet fcitx5-layout-sync.service 2>/dev/null; then
+        printf 'FAIL  KDE/X11 layout synchronizer must not run in GNOME\n'
+        fail=1
+    else
+        printf 'OK    GNOME uses Fcitx-managed layouts without the KDE bridge\n'
+    fi
+    fcitx_config="${XDG_CONFIG_HOME:-$HOME/.config}/fcitx5/config"
+    if [[ -f $fcitx_config ]] &&
+       grep -qx '0=Alt+Shift_L' "$fcitx_config" &&
+       grep -qx '1=Shift+Alt_L' "$fcitx_config" &&
+       grep -qx 'EnumerateSkipFirst=True' "$fcitx_config"; then
+        printf 'OK    GNOME Alt+Shift cycles only the SmartType input methods\n'
+    else
+        printf 'FAIL  GNOME Alt+Shift is not configured in Fcitx\n'
+        fail=1
+    fi
+    for addon in kimpanel ibusfrontend; do
+        addon_config="${XDG_CONFIG_HOME:-$HOME/.config}/fcitx5/conf/$addon.conf"
+        if [[ -f $addon_config ]] && grep -qx 'Enabled=True' "$addon_config"; then
+            printf 'OK    GNOME Fcitx addon enabled: %s\n' "$addon"
+        else
+            printf 'FAIL  GNOME Fcitx addon is not enabled: %s\n' "$addon"
+            fail=1
+        fi
+    done
+    smarttypeui_config="${XDG_CONFIG_HOME:-$HOME/.config}/fcitx5/conf/smarttypeui.conf"
+    if [[ -f $smarttypeui_config ]] && grep -qx 'Enabled=False' "$smarttypeui_config"; then
+        printf 'OK    GNOME delegates candidate rendering to Kimpanel\n'
+    else
+        printf 'FAIL  SmartType native UI must be disabled for GNOME Kimpanel\n'
+        fail=1
+    fi
+    gnome_extension="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/kimpanel@kde.org"
+    check "GNOME Kimpanel extension files" test -f "$gnome_extension/metadata.json"
+    check "GNOME Kimpanel pinned upstream identity" \
+        grep -qx 'ff828412608da89d8ede464c85649659a19a7650' \
+        "$gnome_extension/UPSTREAM_COMMIT"
+    if [[ $("$PREFIX/bin/smarttypectl" get-setting x11_normalize_layout 2>/dev/null) == \
+          "x11_normalize_layout: 1" ]]; then
+        printf 'OK    GNOME normalizes physical keysyms to the selected SmartType method\n'
+    else
+        printf 'FAIL  GNOME layout normalization is disabled\n'
+        fail=1
+    fi
+    fcitx_autostart="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/org.fcitx.Fcitx5.desktop"
+    if [[ -f $fcitx_autostart ]] && grep -qx 'Exec=fcitx5 -d --replace' "$fcitx_autostart"; then
+        printf 'OK    GNOME Fcitx replacement autostart is configured\n'
+    else
+        printf 'FAIL  GNOME Fcitx replacement autostart is missing\n'
+        fail=1
+    fi
+    if command -v gsettings >/dev/null 2>&1; then
+        extensions=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || true)
+        if [[ $extensions == *kimpanel@kde.org* ]]; then
+            printf 'OK    GNOME Kimpanel extension is enabled\n'
+        else
+            printf 'FAIL  GNOME Kimpanel extension is not enabled\n'
+            fail=1
+        fi
+        if [[ $extensions == *appindicatorsupport@rgcjonas.gmail.com* ||
+              $extensions == *ubuntu-appindicators@ubuntu.com* ]]; then
+            printf 'OK    GNOME AppIndicator extension is enabled for the SmartType tray\n'
+        else
+            printf 'FAIL  GNOME AppIndicator extension is not enabled\n'
+            fail=1
+        fi
+    fi
+elif [[ ${desktop_name,,} == *kde* || ${desktop_name,,} == *plasma* ]]; then
     if systemctl --user is-active --quiet fcitx5-layout-sync.service; then
         printf 'OK    SmartType KDE layout synchronizer is running\n'
     else
@@ -178,7 +257,9 @@ fcitx_session_type=""
 if [[ -n $process_environment ]]; then
     fcitx_session_type=$(sed -n 's/^XDG_SESSION_TYPE=//p' <<< "$process_environment" | head -n1)
 fi
-if [[ $fcitx_session_type == wayland ]] && command -v kreadconfig6 >/dev/null 2>&1; then
+if [[ $fcitx_session_type == wayland ]] &&
+   [[ ${desktop_name,,} == *kde* || ${desktop_name,,} == *plasma* ]] &&
+   command -v kreadconfig6 >/dev/null 2>&1; then
     kwin_input_method=$(kreadconfig6 --file kwinrc --group Wayland --key InputMethod 2>/dev/null || true)
     if [[ $kwin_input_method == */org.fcitx.Fcitx5.desktop ]]; then
         printf 'OK    KWin is configured to own Fcitx Wayland input-method startup\n'
@@ -201,16 +282,25 @@ fi
 # and SurroundingText; doctor should catch regressions after reboot/login.
 user_env=$(systemctl --user show-environment 2>/dev/null || true)
 qt_im=""
+qt_ims=""
 gtk_im=""
 xmodifiers=""
 if [[ -n $user_env ]]; then
     while IFS= read -r line; do
         case "$line" in
             QT_IM_MODULE=*) qt_im=${line#QT_IM_MODULE=} ;;
+            QT_IM_MODULES=*) qt_ims=${line#QT_IM_MODULES=} ;;
             GTK_IM_MODULE=*) gtk_im=${line#GTK_IM_MODULE=} ;;
             XMODIFIERS=*) xmodifiers=${line#XMODIFIERS=} ;;
         esac
     done <<< "$user_env"
+fi
+# `systemctl show-environment` shell-quotes values containing semicolons on
+# newer systemd releases (for example `$'wayland;fcitx'`). Prefer the literal
+# value inherited by the running Fcitx process when it is available.
+if [[ -n $process_environment ]]; then
+    process_qt_ims=$(sed -n 's/^QT_IM_MODULES=//p' <<< "$process_environment" | head -n1)
+    [[ -n $process_qt_ims ]] && qt_ims=$process_qt_ims
 fi
 
 if (( x11_session )); then
@@ -226,6 +316,25 @@ if (( x11_session )); then
     else
         printf 'FAIL  X11 session GTK_IM_MODULE=%s (expected fcitx)\n' "${gtk_im:-unset}"
         printf '      Fix: scripts/install-user.sh --enable-x11-layout-sync and relogin\n'
+        fail=1
+    fi
+elif (( gnome_session )); then
+    if [[ ${gtk_im,,} == fcitx ]]; then
+        printf 'OK    GNOME GTK_IM_MODULE uses the Fcitx toolkit path\n'
+    else
+        printf 'FAIL  GNOME GTK_IM_MODULE=%s (expected fcitx)\n' "${gtk_im:-unset}"
+        fail=1
+    fi
+    if [[ ${qt_im,,} == fcitx ]]; then
+        printf 'OK    GNOME QT_IM_MODULE uses fcitx\n'
+    else
+        printf 'FAIL  GNOME QT_IM_MODULE=%s (expected fcitx)\n' "${qt_im:-unset}"
+        fail=1
+    fi
+    if [[ $qt_ims == 'wayland;fcitx' ]]; then
+        printf 'OK    GNOME Qt 6 fallback order is wayland;fcitx\n'
+    else
+        printf 'FAIL  GNOME QT_IM_MODULES=%s (expected wayland;fcitx)\n' "${qt_ims:-unset}"
         fail=1
     fi
 elif [[ ${qt_im,,} == xim ]]; then
