@@ -1,6 +1,6 @@
 # SmartType Project State
 
-## Current release candidate
+## Current stable release
 
 - Version: `0.2.3`.
 - Branch: `agent/gnome-runtime-fix`; public `main` and tag `v0.2.3` contain the
@@ -12,7 +12,7 @@
   Fedora, Ubuntu and Kali VMs, cold-rebooted and checked with doctor. The owner
   confirmed the final Ubuntu GNOME typing and candidate-panel behavior.
 
-The current candidate fixes the release-blocking failures found during the
+The current release fixes the release-blocking failures found during the
 three clean-VM passes:
 
 - KDE no longer forces SmartType back to English every two seconds;
