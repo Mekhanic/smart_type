@@ -37,9 +37,14 @@ The focused regressions include:
   `disabled-extensions` removes those conflicts while preserving unrelated
   disabled extensions.
 
-The full 17-test suite passes with the `0.2.3` fix. Final archive checksums will
-be recorded from the immutable tag workflow, not copied from rejected
-`v0.2.2` assets.
+The full 17-test suite, payload verification, prebuilt install smoke and
+one-line bootstrap test passed in every immutable `v0.2.3` tag build:
+
+| Archive | SHA-256 |
+|---|---|
+| `smarttype-v0.2.3-fedora44-x86_64.tar.gz` | `1ae37fe3d2eff4225f9eafa9010fd1b5bc0074e969a839f716c38bbf67d2c75f` |
+| `smarttype-v0.2.3-ubuntu2604-x86_64.tar.gz` | `ca311ff9205803ccc23c571c80d30c014c9f4c5fb93b58fd84fa551cf26f42b0` |
+| `smarttype-v0.2.3-kali-rolling-x86_64.tar.gz` | `dc5cd5bad560db2ffb2cbfa2a43d4577945760dc440bdfb471cbc28928f5c142` |
 
 ## Installed and owner verification
 
@@ -59,6 +64,13 @@ be recorded from the immutable tag workflow, not copied from rejected
 | External caret cancels candidates | PASS | PASS | PASS |
 | Terminal exclusion | automated PASS | owner PASS | owner PASS |
 | Paused context retains layout switching | automated PASS | owner PASS | owner PASS |
+
+The published `v0.2.3` assets were installed and cold-rebooted in all three
+VMs. Each running Fcitx mapped the matching installed engine hash and each
+doctor run had no `FAIL`. The owner repeated the visible typing and candidate
+panel check on the final Ubuntu GNOME tagged asset and reported PASS. Fedora
+and Kali behavior had already received owner PASS on the source-identical
+engine candidate; the final tagged installs added hash/doctor verification.
 
 Applications used across the owner passes include Telegram/Kate on Fedora;
 LibreOffice Writer and GNOME Terminal on Ubuntu; and Mousepad, Firefox ESR,

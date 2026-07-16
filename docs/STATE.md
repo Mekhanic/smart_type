@@ -3,16 +3,14 @@
 ## Current release candidate
 
 - Version: `0.2.3`.
-- Branch: `agent/gnome-runtime-fix`; public `main` currently contains the
-  `v0.2.2` source commit.
-- Automated suite: 17/17 PASS in the Ubuntu 26.04 target build; the focused
-  GNOME configuration regression also passes directly on the host.
-- Publication state: `v0.2.2` exists only as a rejected prerelease. It is not
-  Latest and the default installer still resolves `v0.2.1`. Version `0.2.3`
-  has not been tagged or published.
-- Release gate: the `0.2.3` GNOME reinstall regression and the full 17-test
-  suite pass. New immutable tagged assets still require VM installation and
-  owner typing confirmation.
+- Branch: `agent/gnome-runtime-fix`; public `main` and tag `v0.2.3` contain the
+  release source.
+- Automated suite: 17/17 PASS in all three immutable tag builds.
+- Publication state: `v0.2.3` is the stable GitHub Latest release. The default
+  one-line installer resolves `v0.2.3`.
+- Release gate: PASS. Tagged assets were checksum-verified, installed in the
+  Fedora, Ubuntu and Kali VMs, cold-rebooted and checked with doctor. The owner
+  confirmed the final Ubuntu GNOME typing and candidate-panel behavior.
 
 The current candidate fixes the release-blocking failures found during the
 three clean-VM passes:
@@ -38,11 +36,18 @@ three clean-VM passes:
 | Ubuntu 26.04 GNOME Wayland | clean official-image overlay, one-line install, cold reboot, Kimpanel active, canonical engine loaded, doctor green | PASS: Writer/terminal switching while paused, correction/undo and caret relocation |
 | Kali Rolling Xfce/X11 | cleaned overlay of the existing QEMU VM, one-line install, cold reboot, `smarttype-us` active, canonical engine/UI loaded, doctor green | PASS: Mousepad/Firefox ESR/Kate/QTerminal matrix |
 
-The `v0.2.2` prerelease assets passed checksums and target-container smoke
-tests, but the Ubuntu VM reinstall exposed a conflicting GNOME
-`disabled-extensions` entry. The `0.2.3` fix removes that conflict; after a
-reboot Kimpanel was `ACTIVE`, Fcitx delegated candidates to Kimpanel and doctor
-had no `FAIL`.
+Final published archives:
+
+| Target | SHA-256 |
+|---|---|
+| Fedora 44 x86_64 | `1ae37fe3d2eff4225f9eafa9010fd1b5bc0074e969a839f716c38bbf67d2c75f` |
+| Ubuntu 26.04 x86_64 | `ca311ff9205803ccc23c571c80d30c014c9f4c5fb93b58fd84fa551cf26f42b0` |
+| Kali Rolling x86_64 | `dc5cd5bad560db2ffb2cbfa2a43d4577945760dc440bdfb471cbc28928f5c142` |
+
+The rejected `v0.2.2` prerelease exposed a conflicting GNOME
+`disabled-extensions` entry during tagged-asset verification. The `v0.2.3`
+installer removes that conflict; after reboot Kimpanel was `ACTIVE`, Fcitx
+delegated candidates to it and doctor had no `FAIL`.
 
 ## Supported architecture
 
@@ -62,6 +67,6 @@ not evidence of a Kimpanel positioning defect.
 
 ## Next action
 
-Commit the `0.2.3` reinstall fix, pass main CI, publish new immutable prerelease
-assets and install them on the three prepared VM environments. Promote only
-`v0.2.3` after owner confirmation; leave rejected `v0.2.2` as a prerelease.
+Monitor incoming reports against the published hashes. Do not replace release
+assets; any code or packaging fix must receive a new version and repeat the
+same prerelease, tagged-asset and owner-verification gates.
