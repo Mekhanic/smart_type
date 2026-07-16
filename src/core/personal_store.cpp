@@ -90,6 +90,9 @@ PersonalStore::PersonalStore(std::filesystem::path path) : path_(std::move(path)
          "updated_at INTEGER NOT NULL DEFAULT(unixepoch()));");
     exec("CREATE TABLE IF NOT EXISTS settings("
          "key TEXT PRIMARY KEY, value TEXT NOT NULL);");
+    // A newly installed SmartType must work before the tray or settings UI is
+    // opened. Keep an explicit user choice of 0 on upgrades.
+    exec("INSERT OR IGNORE INTO settings(key,value) VALUES('enabled','1');");
     exec("CREATE TABLE IF NOT EXISTS correction_history("
          "id INTEGER PRIMARY KEY AUTOINCREMENT, original TEXT NOT NULL, replacement TEXT NOT NULL, "
          "app TEXT NOT NULL DEFAULT '', source TEXT NOT NULL, undone INTEGER NOT NULL DEFAULT 0, "

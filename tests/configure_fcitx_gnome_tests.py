@@ -26,6 +26,11 @@ def main() -> None:
         autostart = root / "org.fcitx.Fcitx5.desktop"
 
         config.mkdir(parents=True)
+        fcitx_config.write_text(
+            "[Behavior/EnabledAddons]\n0=clipboard\n\n"
+            "[Behavior/DisabledAddons]\n0=notificationitem\n",
+            encoding="utf-8",
+        )
         (config / "smarttypeui.conf").write_text(
             "[Addon]\nEnabled=True\n\n[Theme]\nScale=115\n", encoding="utf-8"
         )
@@ -37,24 +42,25 @@ def main() -> None:
         autostart.write_text("[Desktop Entry]\nHidden=true\n", encoding="utf-8")
 
         module.configure_fcitx(fcitx_config)
-        module.set_addon(config / "kimpanel.conf", True)
-        module.set_addon(config / "ibusfrontend.conf", True)
-        module.set_addon(config / "smarttypeui.conf", False)
         module.configure_environment(environment)
         module.configure_autostart(autostart)
 
-        assert "Enabled=True" in (config / "kimpanel.conf").read_text()
-        assert "Enabled=True" in (config / "ibusfrontend.conf").read_text()
         smarttypeui = (config / "smarttypeui.conf").read_text()
-        assert "Enabled=False" in smarttypeui
+        assert "Enabled=True" in smarttypeui
         assert "Scale=115" in smarttypeui
-        assert (config / "smarttypeui.conf.before-smarttype-gnome").exists()
         fcitx = fcitx_config.read_text()
         assert "0=Alt+Shift_L" in fcitx
         assert "1=Shift+Alt_L" in fcitx
         assert "EnumerateSkipFirst=True" in fcitx
         assert "ActiveByDefault=True" in fcitx
         assert "ShareInputState=All" in fcitx
+        assert "[Behavior/EnabledAddons]" in fcitx
+        assert "0=clipboard" in fcitx
+        assert "1=kimpanel" in fcitx
+        assert "2=ibusfrontend" in fcitx
+        assert "[Behavior/DisabledAddons]" in fcitx
+        assert "0=notificationitem" in fcitx
+        assert "1=smarttypeui" in fcitx
 
         managed = environment.read_text()
         assert "FCITX_ADDON_DIRS=/custom" in managed
@@ -73,7 +79,6 @@ def main() -> None:
 
         before = (fcitx, smarttypeui, managed, desktop)
         module.configure_fcitx(fcitx_config)
-        module.set_addon(config / "smarttypeui.conf", False)
         module.configure_environment(environment)
         module.configure_autostart(autostart)
         after = (

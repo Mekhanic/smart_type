@@ -65,6 +65,34 @@ def main() -> None:
         run(configurator, profile)
         assert profile.read_text(encoding="utf-8") == first
 
+        # Exact Kali cold-start regression: Fcitx may store the first group in
+        # GroupOrder under a different numeric Groups/N section. SmartType must
+        # be added to that startup group; otherwise fcitx5-remote cannot leave
+        # keyboard-us and the engine never loads after a cold login.
+        multi_group = pathlib.Path(directory) / "multi-group" / "profile"
+        multi_group.parent.mkdir(parents=True)
+        multi_group.write_text(
+            "[Groups/0]\nName=Russian\nDefault Layout=ru\n"
+            "DefaultIM=keyboard-ru\n\n"
+            "[Groups/0/Items/0]\nName=keyboard-ru\nLayout=\n\n"
+            "[Groups/1]\nName=English\nDefault Layout=us\n"
+            "DefaultIM=keyboard-us\n\n"
+            "[Groups/1/Items/0]\nName=keyboard-us\nLayout=\n\n"
+            "[GroupOrder]\n0=English\n1=Russian\n",
+            encoding="utf-8",
+        )
+        run(configurator, multi_group)
+        configured_multi_group = multi_group.read_text(encoding="utf-8")
+        english_start = configured_multi_group.index("[Groups/1]")
+        order_start = configured_multi_group.index("[GroupOrder]")
+        english_group = configured_multi_group[english_start:order_start]
+        russian_group = configured_multi_group[:english_start]
+        assert "DefaultIM=smarttype-us" in english_group
+        assert "Name=keyboard-us" in english_group
+        assert "Name=smarttype-us" in english_group
+        assert "Name=smarttype" in english_group
+        assert "Name=smarttype" not in russian_group
+
         empty = pathlib.Path(directory) / "empty" / "profile"
         run(configurator, empty)
         generated = empty.read_text(encoding="utf-8")

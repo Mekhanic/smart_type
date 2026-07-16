@@ -58,6 +58,8 @@ case "$MODE" in auto|kde-wayland|gnome-wayland|x11) ;; *) echo "Unsupported mode
 [[ -r /etc/os-release ]] || { echo "Cannot identify this Linux distribution." >&2; exit 1; }
 # shellcheck source=/dev/null
 . /etc/os-release
+# shellcheck source=scripts/install-dependencies.sh
+. "$ROOT/scripts/install-dependencies.sh"
 
 detect_target() {
     case "${ID:-}" in
@@ -118,31 +120,32 @@ if [[ -z $PREBUILT_DIR && $BUILD_FROM_SOURCE -eq 0 ]]; then
     exec "$ROOT/scripts/install-release.sh" "${args[@]}"
 fi
 
+add_optional_desktop_integrations() {
+    local optional_packages=()
+    mapfile -t optional_packages < <(
+        smarttype_optional_desktop_packages "$TARGET" "$MODE")
+    command+=("${optional_packages[@]}")
+}
+
 install_runtime_dependencies() {
     case "$TARGET" in
         fedora44)
             command=(sudo dnf --setopt=install_weak_deps=False install)
             (( ASSUME_YES )) && command+=(-y)
-            command+=(fcitx5 fcitx5-qt fcitx5-gtk fcitx5-configtool hunspell hunspell-ru glibc-gconv-extra
-                qt6-qtbase qt6-qtdeclarative cairo pango gdk-pixbuf2 glib2 wayland-libs
-                libxcb xcb-util xcb-util-wm xcb-util-keysyms)
-            if [[ $MODE == gnome-wayland ]]; then
-                command+=(fcitx5-autostart gnome-shell-extension-appindicator)
-            fi
+            mapfile -t runtime_packages < <(
+                smarttype_runtime_packages "$TARGET" "$MODE")
+            command+=("${runtime_packages[@]}")
+            add_optional_desktop_integrations
             "${command[@]}"
             ;;
         ubuntu2604|kali-rolling)
             sudo apt-get update
             command=(sudo apt-get install)
             (( ASSUME_YES )) && command+=(-y)
-            command+=(fcitx5 fcitx5-frontend-qt6 fcitx5-frontend-gtk3 fcitx5-config-qt
-                hunspell hunspell-ru hunspell-en-us libqt6core6 libqt6gui6 libqt6widgets6 libqt6dbus6
-                libqt6qml6 libcairo2 libpango-1.0-0 libgdk-pixbuf-2.0-0 libglib2.0-0
-                libwayland-client0 libxcb1 libxcb-util1 libxcb-icccm4 libxcb-xinerama0
-                libxcb-randr0 libxcb-ewmh2 libxcb-keysyms1)
-            if [[ $MODE == gnome-wayland && $TARGET == ubuntu2604 ]]; then
-                command+=(fcitx5-frontend-gtk4 gnome-shell-ubuntu-extensions)
-            fi
+            mapfile -t runtime_packages < <(
+                smarttype_runtime_packages "$TARGET" "$MODE")
+            command+=("${runtime_packages[@]}")
+            add_optional_desktop_integrations
             "${command[@]}"
             ;;
     esac
@@ -159,6 +162,7 @@ install_build_dependencies() {
                 wayland-devel wayland-protocols-devel qt6-qtbase-devel
                 qt6-qtdeclarative-devel libxcb-devel xcb-util-devel xcb-util-wm-devel
                 xcb-util-keysyms-devel)
+            add_optional_desktop_integrations
             "${command[@]}"
             ;;
         ubuntu2604|kali-rolling)
@@ -172,6 +176,7 @@ install_build_dependencies() {
                 libgdk-pixbuf-2.0-dev libglib2.0-dev libwayland-dev wayland-protocols
                 libxcb1-dev libxcb-util-dev libxcb-icccm4-dev libxcb-xinerama0-dev
                 libxcb-randr0-dev libxcb-ewmh-dev libxcb-keysyms1-dev)
+            add_optional_desktop_integrations
             "${command[@]}"
             ;;
     esac

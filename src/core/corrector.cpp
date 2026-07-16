@@ -628,9 +628,6 @@ std::optional<std::string> Corrector::try_layout_retranslate(std::string_view wo
 std::optional<std::string> Corrector::normalize_accidental_case(std::string_view word) const {
     if (word.empty()) return std::nullopt;
     const auto normalized = lowercase_ru(word);
-    if (std::find(personal_words_.begin(), personal_words_.end(), normalized) != personal_words_.end()) {
-        return std::nullopt;
-    }
 
     const auto letters = utf8_to_utf32(word);
     int upper = 0;

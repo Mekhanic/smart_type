@@ -175,7 +175,10 @@ instead of the focused application field.
 ### Decision
 
 - GNOME Wayland enables Fcitx `ibusfrontend` and `kimpanel` and disables the
-  internal `smarttypeui` addon.
+  internal `smarttypeui` addon through Fcitx's global addon override lists.
+- Application input proxied by GNOME's IBus compositor is accepted even when
+  its program identifier is `gnome-shell`; rejecting that identifier disables
+  SmartType for every native GNOME application, not only Shell UI fields.
 - `GTK_IM_MODULE=fcitx` is used because Ubuntu's confined Firefox cannot create
   a working Fcitx IBus context. Its bundled legacy-compatible GTK module sends
   a window-relative caret rectangle through Kimpanel's old absolute method.

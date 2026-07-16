@@ -30,6 +30,24 @@ def current_kde_layout():
         return None
 
 
+def kde_layout_codes():
+    """Return KDE layout codes in index order, or an empty list on failure."""
+    try:
+        output = command("busctl", "--user", "call", "org.kde.keyboard", "/Layouts",
+                         "org.kde.KeyboardLayouts", "getLayoutsList").stdout
+        return re.findall(r'"([^"\\]*)"\s+"[^"\\]*"\s+"[^"\\]*"', output)
+    except (OSError, subprocess.SubprocessError):
+        return []
+
+
+def kde_index_targets():
+    """Use KDE as owner only for the index contract the engine can represent."""
+    codes = kde_layout_codes()
+    if len(codes) >= 2 and codes[0] == "us" and codes[1] == "ru":
+        return TARGETS
+    return {}
+
+
 def x11_group_options():
     """Return XKB group-switch options that conflict with Fcitx Alt+Shift."""
     try:
@@ -98,8 +116,8 @@ def record(source, layout, requested, before, after):
         stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-def select_input_method(layout, source):
-    requested = TARGETS.get(layout)
+def select_input_method(layout, source, targets=TARGETS):
+    requested = targets.get(layout)
     if not requested or not fcitx_has_dbus_owner():
         return
     with LOCK:
@@ -117,11 +135,37 @@ def select_input_method(layout, source):
         record(source, layout, requested, before, after)
 
 
+def activate_startup_default(source):
+    """Replace Fcitx's cold-start keyboard fallback exactly once.
+
+    ActiveByDefault is not sufficient on every frontend: Fcitx may keep
+    keyboard-us until the first explicit activation even though DefaultIM is
+    smarttype-us. Only repair that startup fallback. Any real input method
+    (including smarttype Russian or a third-party method) is left untouched.
+    """
+    current = current_input_method()
+    if not current:
+        return False
+    if current != "keyboard-us":
+        return True
+    select_input_method(0, source)
+    return current_input_method() == "smarttype-us"
+
+
+def activate_x11_default():
+    return activate_startup_default("x11-startup-default")
+
+
+def activate_kde_default():
+    return activate_startup_default("kde-startup-default")
+
+
 def reconcile_forever():
     while True:
         layout = current_kde_layout()
-        if layout is not None:
-            select_input_method(layout, "periodic-reconcile")
+        targets = kde_index_targets()
+        if layout is not None and targets:
+            select_input_method(layout, "periodic-reconcile", targets)
         time.sleep(2)
 
 
@@ -129,9 +173,20 @@ def monitor():
     session_type = os.environ.get("XDG_SESSION_TYPE", "").lower()
     desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
     if session_type == "x11" or (os.environ.get("DISPLAY") and "kde" not in desktop):
+        startup_default_activated = False
         while True:
             clear_x11_group_options()
-            time.sleep(2)
+            if not startup_default_activated:
+                startup_default_activated = activate_x11_default()
+            time.sleep(2 if startup_default_activated else 0.25)
+
+    # With a single/custom KDE layout, KWin cannot represent SmartType's
+    # logical RU method and therefore is not the owner. Fcitx owns Alt+Shift in
+    # this mode, but may still cold-start on its technical keyboard-us item.
+    # Repair that fallback once before listening for any later KDE changes.
+    if "kde" in desktop or "plasma" in desktop:
+        while not kde_index_targets() and not activate_kde_default():
+            time.sleep(0.25)
 
     threading.Thread(target=reconcile_forever, daemon=True).start()
     cmd = ["dbus-monitor", "--session",
@@ -144,7 +199,9 @@ def monitor():
             for line in process.stdout:
                 match = re.search(r"uint32\s+(\d+)", line)
                 if match:
-                    select_input_method(int(match.group(1)), "kde-layoutChanged")
+                    targets = kde_index_targets()
+                    if targets:
+                        select_input_method(int(match.group(1)), "kde-layoutChanged", targets)
         except (OSError, subprocess.SubprocessError):
             time.sleep(1)
         finally:

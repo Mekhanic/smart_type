@@ -14,7 +14,7 @@ user-local release bundle.
 
 ## Recommended installation
 
-Run this command from a terminal inside the graphical session:
+Open a normal terminal inside the desktop session and run exactly one command:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Mekhanic/smart_type/main/scripts/install-release.sh | bash
@@ -27,6 +27,17 @@ the existing Fcitx group without deleting other input methods, and enables the
 tray services. The original Fcitx profile is saved once as
 `~/.config/fcitx5/profile.before-smarttype`.
 
+When it finishes, log out of the desktop account and log back in once. Closing
+the terminal is not sufficient because Fcitx and applications must inherit the
+new session environment. SmartType then starts automatically with English as
+the initial method. Run:
+
+```bash
+~/.local/share/smarttype/doctor.sh
+```
+
+Do not continue to application testing if the output contains `FAIL`.
+
 When the bootstrap is piped to Bash, package-manager confirmations are handled
 non-interactively so they cannot consume the script input. `sudo` may still ask
 for the user's password through the terminal; SmartType never reads or stores it.
@@ -38,6 +49,9 @@ verified by SHA-256 before it enters a release bundle. The existing GNOME
 extension list and unrelated Fcitx settings are preserved. GNOME uses its own
 candidate renderer, so the panel can look slightly different from KDE while
 typing, correction, candidate selection and Backspace behavior remain the same.
+Fcitx addon selection is persisted through its global enabled/disabled addon
+lists; `doctor.sh` also checks the actual running UI and fails unless it is
+Kimpanel in a GNOME session.
 
 Ubuntu Firefox Snap is a known exception: its bundled legacy `fcitx4` GTK
 module requests `ClientSideInputPanel`, so Firefox owns the candidate popup.
@@ -45,10 +59,23 @@ SmartType corrections still run, but Kimpanel cannot correct that popup's
 placement. Use a normal GNOME GTK/Qt application for the release-grade panel
 check; do not claim the Firefox Snap client-side renderer as Kimpanel coverage.
 
-Log out and back in once after the first installation. SmartType English is
-selected by default. The normal path does not install compilers or development
-headers. It needs an x86_64 system, internet access, and temporary administrator
-access only for runtime packages.
+LibreOffice Writer must use its GTK VCL backend to participate in the Fcitx
+toolkit input path on GNOME and X11. If a distro-packaged LibreOffice is already
+installed, the SmartType installer conditionally adds `libreoffice-gtk3`; it
+does not install the office suite for users who do not have it. Fully close all
+LibreOffice processes and reopen Writer afterward. A generic LibreOffice
+backend may expose only raw XIM without preedit; SmartType deliberately passes
+text through unchanged in that unsupported context rather than attempting
+corrections that could duplicate or delete document text. Snap and Flatpak
+LibreOffice packages must provide their own Fcitx/GTK integration.
+
+The normal path does not install compilers or development headers. It needs an
+x86_64 system, internet access, and temporary administrator access only for
+runtime packages.
+
+A fresh personal database is explicitly enabled. Upgrades preserve an existing
+`enabled=0` preference; use the tray switch or
+`~/.local/bin/smarttypectl set-setting enabled 1` to turn it back on.
 
 Cloning the repository and running `./install.sh` uses the same prebuilt path.
 Use `./install.sh --build-from-source` for development or local compilation.
@@ -129,8 +156,11 @@ opt in to disabling it:
 
 GitHub Actions builds and tests separate binary bundles inside Fedora 44,
 Ubuntu 26.04 and Kali Rolling containers. A tag publishes all three archives
-and checksum files to the GitHub release. This keeps the host-level Fcitx and
-per-user desktop configuration in one verified installer.
+and checksum files as a prerelease. Test that explicit tag on restored clean
+VM overlays before promoting it to a normal release; only normal releases are
+eligible for the default `latest` one-line install. This keeps the host-level
+Fcitx and per-user desktop configuration in one verified installer without
+exposing an unverified tag to existing users.
 
 Native RPM/DEB packages may be added later, but they still need a post-install
 user configuration step. AppImage and Flatpak remain a poor technical fit for
@@ -163,5 +193,5 @@ Select **SmartType Русский** and **SmartType Английский** in Fc
 typing, a candidate click, and a click elsewhere while candidates are visible:
 the latter must close the panel rather than moving it to the mouse position.
 
-For a release-grade Ubuntu/Arch check, including the exact reboot and typing
+For a release-grade Ubuntu/Kali check, including the exact reboot and typing
 cases to record, use [DISTRO_TEST_PLAN.md](DISTRO_TEST_PLAN.md).

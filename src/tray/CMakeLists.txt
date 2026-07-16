@@ -23,6 +23,10 @@ install(FILES ${PROJECT_SOURCE_DIR}/icons/icon_idle.png
 add_test(NAME settings-smoke COMMAND smarttype-tray --check-settings)
 set_tests_properties(settings-smoke PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+add_test(NAME tray-startup-no-popup COMMAND smarttype-tray --check-tray-startup)
+set_tests_properties(tray-startup-no-popup PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 add_test(NAME report-dialog-smoke COMMAND smarttype-tray --check-report)
 set_tests_properties(report-dialog-smoke PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

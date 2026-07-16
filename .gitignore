@@ -1,5 +1,9 @@
 /build/
 /build-*/
+/dist/
+/dist-candidate/
+/.cache/
+/.local/
 /CMakeFiles/
 /stage/
 /.deps/

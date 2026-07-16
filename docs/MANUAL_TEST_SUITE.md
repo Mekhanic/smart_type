@@ -64,6 +64,7 @@ login. Test Mousepad, Firefox and Kate.
 | MT-X11-02 | all three | Click `в общем` | exactly `в общем `, no duplicated source or fragments |
 | MT-X11-03 | all three | Immediate Backspace after MT-X11-02 | restores `вопщем ` |
 | MT-X11-04 | all three | Inspect Fcitx DebugInfo while focused | `frontend:dbus`, `focus:1`; raw `frontend:xim` is not accepted for this check |
+| MT-X11-05 | QTerminal, with “Do not correct in terminals” enabled | Select SmartType RU, type `севодня `, press Alt+Shift, type `hello `, then try Ctrl+C/Ctrl+L | literal `севодня hello `; no correction, candidates or learning in either language; Alt+Shift changes RU/EN and terminal shortcuts still work |
 | MT-016 | all | Open candidates, then immediately click another text position | panel closes and never follows the mouse/caret; typing remains intact |
 | MT-017 | all | Put the caret before a visible character, press Delete | removes the character to the right; no square/control glyph |
 | MT-018 | all | Open candidates, press Down, then Left/Right/Delete | panel closes; literal word remains; editing keys work immediately without a mouse click |
@@ -136,6 +137,12 @@ Start each case on **SmartType Russian** (`smarttype`).
 | MT-061 | Telegram | `busctl` DebugInfo or diagnostics: focus + Preedit caps | Preedit present when focused |
 | MT-062 | all | Tray pause for current app | no corrections in that app; other apps OK |
 | MT-063 | all | Tray disable SmartType | plain Fcitx/layout only |
+| MT-064 | LibreOffice Writer | DebugInfo after a normal launch | `program:soffice frontend:dbus`, Preedit present; never raw `soffice.bin frontend:xim` |
+| MT-065 | LibreOffice Writer | Alt+Shift RU → EN → RU, then type `Приивет ` | both layout switches stay in Writer; result is exactly `Привет ` with no duplicate fragment |
+| MT-066 | LibreOffice Writer | Show candidates, select with Tab, type next character | replacement is correct and the caret remains to the right of inserted text |
+| MT-067 | all supported toolkit apps | On logical RU press physical `[ ] ; ' , . /`, then repeat with Shift | `х ъ ж э б ю .`; shifted letter positions produce `Х Ъ Ж Э Б Ю`, and Shift+/ produces comma |
+| MT-068 | every release renderer (GNOME Kimpanel, KDE native, X11 native) | Show 3 candidates, hover each with the mouse, then click the second | hover visibly follows the pointer; exactly the second candidate commits with one trailing space |
+| MT-069 | Telegram and one plain editor | Ensure `понял` has been learned, then type `ПОнял `, `Понял ` and `ПОНЯЛ ` | results are exactly `Понял `, `Понял ` and `ПОНЯЛ ` |
 
 ---
 

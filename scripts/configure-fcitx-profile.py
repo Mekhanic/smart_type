@@ -27,10 +27,46 @@ def section_bounds(lines: list[str], section: str) -> tuple[int, int] | None:
     return start, end
 
 
-def set_group_value(lines: list[str], key: str, value: str) -> None:
-    bounds = section_bounds(lines, GROUP)
+def primary_group(lines: list[str]) -> str:
+    """Return the group Fcitx will enter first according to GroupOrder."""
+    order = section_bounds(lines, "GroupOrder")
+    ordered_name = ""
+    if order is not None:
+        start, end = order
+        values: list[tuple[int, str]] = []
+        for line in lines[start + 1 : end]:
+            match = re.match(r"^(\d+)=(.*)$", line)
+            if match:
+                values.append((int(match.group(1)), match.group(2)))
+        if values:
+            ordered_name = min(values)[1]
+
+    group_header = re.compile(r"^\[Groups/(\d+)\]$")
+    fallback = GROUP
+    for index, line in enumerate(lines):
+        match = group_header.match(line)
+        if not match:
+            continue
+        group = f"Groups/{match.group(1)}"
+        if fallback == GROUP and group == GROUP:
+            fallback = group
+        bounds = section_bounds(lines, group)
+        assert bounds is not None
+        start, end = bounds
+        name = next(
+            (item.split("=", 1)[1] for item in lines[start + 1 : end]
+             if item.startswith("Name=")),
+            "",
+        )
+        if ordered_name and name == ordered_name:
+            return group
+    return fallback
+
+
+def set_group_value(lines: list[str], key: str, value: str, group: str = GROUP) -> None:
+    bounds = section_bounds(lines, group)
     if bounds is None:
-        lines[:0] = [f"[{GROUP}]", "Name=Default", "Default Layout=us", f"{key}={value}", ""]
+        lines[:0] = [f"[{group}]", "Name=Default", "Default Layout=us", f"{key}={value}", ""]
         return
     start, end = bounds
     prefix = f"{key}="
@@ -41,10 +77,10 @@ def set_group_value(lines: list[str], key: str, value: str) -> None:
     lines.insert(end, f"{key}={value}")
 
 
-def item_names(lines: list[str]) -> tuple[set[str], int]:
+def item_names(lines: list[str], group: str = GROUP) -> tuple[set[str], int]:
     names: set[str] = set()
     maximum = -1
-    item_header = re.compile(r"^\[Groups/0/Items/(\d+)\]$")
+    item_header = re.compile(rf"^\[{re.escape(group)}/Items/(\d+)\]$")
     for index, line in enumerate(lines):
         match = item_header.match(line)
         if not match:
@@ -61,9 +97,9 @@ def item_names(lines: list[str]) -> tuple[set[str], int]:
     return names, maximum
 
 
-def reorder_primary_items(lines: list[str]) -> None:
+def reorder_primary_items(lines: list[str], group: str = GROUP) -> None:
     """Keep every group-0 item, but make keyboard-us the skipped first item."""
-    item_header = re.compile(r"^\[Groups/0/Items/(\d+)\]$")
+    item_header = re.compile(rf"^\[{re.escape(group)}/Items/(\d+)\]$")
     sections: list[tuple[int, int, str, list[str]]] = []
     for start, line in enumerate(lines):
         if not item_header.match(line):
@@ -96,15 +132,15 @@ def reorder_primary_items(lines: list[str]) -> None:
     )
     rebuilt: list[str] = []
     for new_index, (_old_index, (_start, _end, _name, block)) in enumerate(ordered):
-        block[0] = f"[Groups/0/Items/{new_index}]"
+        block[0] = f"[{group}/Items/{new_index}]"
         rebuilt.extend(block)
         if rebuilt and rebuilt[-1]:
             rebuilt.append("")
     lines[insertion:insertion] = rebuilt
 
 
-def group_value(lines: list[str], key: str, default: str = "") -> str:
-    bounds = section_bounds(lines, GROUP)
+def group_value(lines: list[str], key: str, default: str = "", group: str = GROUP) -> str:
+    bounds = section_bounds(lines, group)
     if bounds is None:
         return default
     start, end = bounds
@@ -115,9 +151,9 @@ def group_value(lines: list[str], key: str, default: str = "") -> str:
     return default
 
 
-def ordered_items(lines: list[str]) -> list[tuple[str, str]]:
+def ordered_items(lines: list[str], group: str = GROUP) -> list[tuple[str, str]]:
     result: list[tuple[str, str]] = []
-    item_header = re.compile(r"^\[Groups/0/Items/(\d+)\]$")
+    item_header = re.compile(rf"^\[{re.escape(group)}/Items/(\d+)\]$")
     for start, line in enumerate(lines):
         if not item_header.match(line):
             continue
@@ -158,11 +194,12 @@ def apply_live(lines: list[str]) -> bool:
     if owner.returncode != 0 or owner.stdout.strip() != "b true":
         return False
 
-    items = ordered_items(lines)
+    group = primary_group(lines)
+    items = ordered_items(lines, group)
     if not items:
         return False
-    group_name = group_value(lines, "Name", "Default")
-    default_layout = group_value(lines, "Default Layout", "us")
+    group_name = group_value(lines, "Name", "Default", group)
+    default_layout = group_value(lines, "Default Layout", "us", group)
     command = [
         "busctl",
         "--user",
@@ -222,8 +259,9 @@ def configure(path: pathlib.Path) -> None:
             ]
         )
 
-    set_group_value(lines, "DefaultIM", "smarttype-us")
-    names, maximum = item_names(lines)
+    group = primary_group(lines)
+    set_group_value(lines, "DefaultIM", "smarttype-us", group)
+    names, maximum = item_names(lines, group)
     for name in REQUIRED_INPUT_METHODS:
         if name in names:
             continue
@@ -232,13 +270,13 @@ def configure(path: pathlib.Path) -> None:
             lines.append("")
         lines.extend(
             [
-                f"[Groups/0/Items/{maximum}]",
+                f"[{group}/Items/{maximum}]",
                 f"Name={name}",
                 "Layout=",
             ]
         )
 
-    reorder_primary_items(lines)
+    reorder_primary_items(lines, group)
 
     updated = "\n".join(lines).rstrip() + "\n"
     if updated == original:

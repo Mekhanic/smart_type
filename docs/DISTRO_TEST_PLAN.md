@@ -8,36 +8,28 @@ Wayland заметно различаются пакетированием и п
 
 | Окружение | Статус | Зачем оно нужно |
 |---|---|---|
-| Fedora KDE Plasma Wayland | проверено на рабочей машине | базовый путь разработки |
+| Fedora 44 KDE Plasma Wayland | проверено на рабочей машине и чистой ВМ | базовый путь разработки |
+| Fedora 44 GNOME Wayland | сборка и установщик проверены; owner visual pass не выполнен | второй Fedora frontend |
 | Ubuntu 26.04 KDE Plasma Wayland | проверено в отдельной ВМ, включая холодный старт | популярный DEB-путь и Wayland |
-| Ubuntu 24.04 LTS | сборка проверена в контейнере, чистая графическая сессия не проверена | стабильная LTS-база |
-| Arch Linux KDE Plasma Wayland | не проверено в чистой сессии | актуальные Fcitx, Qt и Wayland-пакеты |
-| Kali Linux Xfce/X11 | проверено в отдельной ВМ, включая холодный старт и XIM | нативный XCB-рендерер и DEB rolling-база |
+| Ubuntu 26.04 GNOME Wayland | проверено в чистой ВМ после холодного старта | GNOME IBus/Kimpanel путь |
+| Kali Rolling Xfce/X11 | проверено в чистом overlay, включая холодный старт и GTK/Qt Fcitx frontend | нативный XCB-рендерер и DEB rolling-база |
 
 Проверять лучше в трёх отдельных виртуальных машинах со свежими снимками, а
-не поверх уже настроенного рабочего компьютера. Для каждого окружения сначала
-устанавливаются зависимости из [INSTALL.md](INSTALL.md), затем выполняется:
+не поверх уже настроенного рабочего компьютера. Для каждого окружения выполните
+тот же публичный bootstrap, который получит пользователь:
 
 ```bash
-git clone <URL-репозитория-smarttype>
-cd T9
-./scripts/install-user.sh
-./scripts/doctor.sh
+curl -fsSL https://raw.githubusercontent.com/Mekhanic/smart_type/main/scripts/install-release.sh | bash
 ```
 
-Для Xfce/X11 вместо обычной установки используйте
-`./scripts/install-user.sh --enable-x11-layout-sync`; этот режим делает Fcitx
-единственным владельцем Alt+Shift, включает синхронизатор при входе и выбирает
-GTK/Qt-модули Fcitx. После установки обязательна новая графическая сессия.
-
 После первой установки нужно выйти из графической сессии и войти снова.
-В Fcitx добавьте «SmartType Русский» и «SmartType Английский» и убедитесь, что
+Установщик сам добавляет «SmartType Русский» и «SmartType English»; убедитесь, что
 `fcitx5-remote -n` выводит один из этих методов.
 
 Для X11 перед ручным тестом обязательно выполните `./scripts/doctor.sh` и
 убедитесь, что есть строка `OK SmartType candidate panel includes native X11
-support`. Наличие tray, успешный `smarttype-eval` и 10/10 CTest не доказывают,
-что панель может отображаться в X11.
+support`. Наличие tray и успешный `smarttype-eval` сами по себе не доказывают,
+что панель может отображаться в X11. Текущий полный набор содержит 17 тестов.
 
 Для Mousepad, Firefox и Kate проверьте DebugInfo: ожидается `frontend:dbus`, а
 не `frontend:xim`. Набираемое слово должно находиться внутри поля приложения;
@@ -45,7 +37,9 @@ popup содержит только кандидатов.
 
 ## Обязательный ручной smoke-тест
 
-В Telegram, браузере и Kate/KWrite выполните одинаковую короткую проверку:
+В Telegram, браузере, Kate/KWrite и LibreOffice Writer выполните одинаковую
+короткую проверку. Для Writer сначала убедитесь, что DebugInfo показывает
+`program:soffice frontend:dbus` с Preedit, а не `soffice.bin frontend:xim`:
 
 1. Введите известную опечатку, например `севодня `; проверьте исправление и
    немедленный Backspace для возврата исходного текста.
@@ -70,7 +64,7 @@ popup содержит только кандидатов.
 ## Границы обещания
 
 Нативный X11-рендерер входит в сборку и проверен на Kali Xfce/X11 через
-реальный XIM-контекст Mousepad. XWayland, GNOME-специфичная интеграция
-раскладок и клиентская Fcitx-панель не поддерживаются. Flatpak/AppImage не подходят для
+GTK/Qt Fcitx frontend (`frontend:dbus`) в Mousepad, Firefox и Kate. Raw XIM без
+preedit и XWayland-only не являются релизными целями. Flatpak/AppImage не подходят для
 установки самого аддона в процесс Fcitx хоста; для распространения нужны
 исходная установка или нативные RPM/DEB/Arch-пакеты.

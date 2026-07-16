@@ -147,6 +147,8 @@ int main() {
     expect(!store.should_demote_correction("частая", "часто", ""),
            "accepted correction survives occasional undos");
     expect(store.mode() == "normal", "normal mode is the default");
+    expect(store.setting_enabled("enabled", false),
+           "a new SmartType database is explicitly enabled");
     store.set_mode("cautious");
     expect(store.mode() == "cautious", "correction mode persists");
     expect(store.setting_enabled("sentence_capitalization"),
@@ -250,6 +252,12 @@ int main() {
            "multiple accidental capitals normalized");
     result = corrector.decide("ПРИВЕТ");
     expect(result.action == smarttype::Action::keep, "intentional all caps preserved");
+    smarttype::Corrector learned_case_corrector;
+    learned_case_corrector.add_personal_word("понял");
+    result = learned_case_corrector.decide("ПОнял");
+    expect(result.action == smarttype::Action::replace && result.candidate == "Понял" &&
+               result.reason == "accidental mixed case",
+           "learned dictionary word does not suppress accidental-case normalization");
 
     // Blacklist database tests
     store.blacklist_add("MyUniqueEditor");
@@ -287,6 +295,14 @@ int main() {
     expect(smarttype::translate_layout("руддщ") == "hello", "translate jcuken to qwerty");
     expect(smarttype::translate_layout("Ghbdtn") == "Привет", "translate layout preserves capitalization");
     expect(smarttype::translate_layout("ghbdtn/") == "привет.", "translate slash to dot");
+    expect(smarttype::translate_layout("[];',./") == "хъжэбю.",
+           "translate physical US punctuation row to Russian");
+    expect(smarttype::translate_layout("хъжэбю.") == "[];',./",
+           "translate Russian punctuation-row letters back to US keys");
+    expect(smarttype::translate_layout("{}:\"<>?") == "ХЪЖЭБЮ,",
+           "translate shifted physical US punctuation row to Russian");
+    expect(smarttype::translate_layout("ХЪЖЭБЮ,") == "{}:\"<>?",
+           "translate shifted Russian punctuation-row letters back to US keys");
 
     // Affix-only Russian surface forms must stay valid (not false RU→EN layout flip).
     expect(corrector.is_dictionary_word("здравствуй"), "здравствуй is a dictionary word");

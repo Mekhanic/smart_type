@@ -1,5 +1,6 @@
 #include "smarttype/corrector.hpp"
 #include "smarttype/decision_log.hpp"
+#include "smarttype/fcitx_safety.hpp"
 #include "smarttype/personal_store.hpp"
 #include "smarttype/text.hpp"
 #include "smarttype/version.hpp"
@@ -191,6 +192,54 @@ bool is_letter(uint32_t value) {
            (value >= 0x0410 && value <= 0x044F) || value == 0x0401 || value == 0x0451;
 }
 
+std::optional<uint32_t> russian_symbol_for_physical_key(
+    int code, fcitx::KeyStates states) {
+    const bool shift = states.test(fcitx::KeyState::Shift);
+    const bool caps = states.test(fcitx::KeyState::CapsLock);
+    const bool uppercase = shift != caps;
+    switch (code) {
+    // XKB keycodes observed on the supported GTK/DBus and X11 frontends.
+    case 34: return uppercase ? 0x0425 : 0x0445;  // AD11: х / Х
+    case 35: return uppercase ? 0x042A : 0x044A;  // AD12: ъ / Ъ
+    case 47: return uppercase ? 0x0416 : 0x0436;  // AC10: ж / Ж
+    case 48: return uppercase ? 0x042D : 0x044D;  // AC11: э / Э
+    case 49: return uppercase ? 0x0401 : 0x0451;  // TLDE: ё / Ё
+    case 59: return uppercase ? 0x0411 : 0x0431;  // AB08: б / Б
+    case 60: return uppercase ? 0x042E : 0x044E;  // AB09: ю / Ю
+    case 61: return shift ? ',' : '.';             // AB10: , / .
+    default: return std::nullopt;
+    }
+}
+
+uint32_t normalize_layout_unicode(uint32_t unicode, int physical_code,
+                                  fcitx::KeyStates states, bool want_en) {
+    const bool is_cyrillic =
+        (unicode >= 0x0410 && unicode <= 0x044F) ||
+        unicode == 0x0401 || unicode == 0x0451;
+    const bool is_latin =
+        (unicode >= 'A' && unicode <= 'Z') ||
+        (unicode >= 'a' && unicode <= 'z');
+    if (!want_en) {
+        if (const auto physical = russian_symbol_for_physical_key(physical_code, states)) {
+            return *physical;
+        }
+        if (is_latin) {
+            const std::string mapped =
+                smarttype::translate_layout(fcitx::utf8::UCS4ToUTF8(unicode));
+            if (!mapped.empty() && fcitx::utf8::lengthValidated(mapped) == 1) {
+                return fcitx::utf8::getChar(mapped);
+            }
+        }
+    } else if (is_cyrillic) {
+        const std::string mapped =
+            smarttype::translate_layout(fcitx::utf8::UCS4ToUTF8(unicode));
+        if (!mapped.empty() && fcitx::utf8::lengthValidated(mapped) == 1) {
+            return fcitx::utf8::getChar(mapped);
+        }
+    }
+    return unicode;
+}
+
 uint32_t uppercase_letter(uint32_t value) {
     if (value >= 'a' && value <= 'z') return value - ('a' - 'A');
     if (value >= 0x0430 && value <= 0x044F) return value - 0x20;
@@ -258,31 +307,26 @@ bool is_logging_enabled(const smarttype::PersonalStore* store) {
     return store ? store->setting_enabled("diagnostics", false) : false;
 }
 
-bool is_disabled_context(fcitx::InputContext* input_context, const smarttype::PersonalStore* store) {
-    if (store && !store->setting_enabled("enabled")) return true;
+bool is_terminal_excluded_context(
+    fcitx::InputContext* input_context, const smarttype::PersonalStore* store) {
+    if (!store || !store->setting_enabled("disable_in_terminals") ||
+        environment_enabled("SMARTTYPE_ENABLE_IN_TERMINALS")) {
+        return false;
+    }
     const auto flags = input_context->capabilityFlags();
-    if (flags.test(fcitx::CapabilityFlag::Password) ||
-           flags.test(fcitx::CapabilityFlag::Sensitive) ||
-           flags.test(fcitx::CapabilityFlag::Disable)) return true;
-    if (flags.test(fcitx::CapabilityFlag::Terminal) && store &&
-        store->setting_enabled("disable_in_terminals") &&
-        !environment_enabled("SMARTTYPE_ENABLE_IN_TERMINALS")) {
+    if (flags.test(fcitx::CapabilityFlag::Terminal)) {
         return true;
     }
     std::string program = input_context->program();
     std::transform(program.begin(), program.end(), program.begin(),
                    [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
 
-    if (program.find("plasmashell") != std::string::npos ||
-        program.find("krunner") != std::string::npos ||
-        program.find("gnome-shell") != std::string::npos) {
-        return true;
-    }
-
     const char* terminals[] = {
-        "konsole", "kitty", "alacritty", "wezterm", "xterm", 
-        "gnome-terminal", "xfce4-terminal", "tilix", "termite", 
-        "mate-terminal", "urxvt", "foot", "kgx", "ptyxis", "st"
+        "konsole", "qterminal", "lxterminal", "kitty", "alacritty", "wezterm", "xterm",
+        "gnome-terminal", "gnome-console", "xfce4-terminal", "mate-terminal", "tilix",
+        "termite", "terminator", "terminology", "urxvt", "roxterm", "sakura", "foot",
+        "kgx", "ptyxis", "yakuake", "guake", "tilda", "cool-retro-term", "ghostty",
+        "blackbox", "cosmic-term", "contour", "rio", "tabby", "hyper", "warp", "st"
     };
     for (const char* name : terminals) {
         bool match = false;
@@ -291,9 +335,43 @@ bool is_disabled_context(fcitx::InputContext* input_context, const smarttype::Pe
         } else {
             match = (program.find(name) != std::string::npos);
         }
-        if (match && store &&
-            store->setting_enabled("disable_in_terminals") &&
-            !environment_enabled("SMARTTYPE_ENABLE_IN_TERMINALS")) return true;
+        if (match) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool is_disabled_context(fcitx::InputContext* input_context, const smarttype::PersonalStore* store) {
+    if (store && !store->setting_enabled("enabled")) return true;
+    const auto flags = input_context->capabilityFlags();
+    if (flags.test(fcitx::CapabilityFlag::Password) ||
+           flags.test(fcitx::CapabilityFlag::Sensitive) ||
+           flags.test(fcitx::CapabilityFlag::Disable)) return true;
+    if (is_terminal_excluded_context(input_context, store)) {
+        return true;
+    }
+
+    std::string program = input_context->program();
+    std::transform(program.begin(), program.end(), program.begin(),
+                   [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+
+    // Raw XIM contexts without client preedit cannot provide a safe editing
+    // transaction. In particular, LibreOffice's generic VCL backend feeds
+    // fabricated Backspace events back into XIM, so an autocorrection may
+    // duplicate or delete arbitrary text. Fail closed: the application still
+    // receives ordinary key events, while SmartType waits for a supported
+    // GTK/Qt Fcitx frontend.
+    if (smarttype::unsafe_raw_xim_context(
+            input_context->frontendName(),
+            flags.test(fcitx::CapabilityFlag::Preedit))) {
+        return true;
+    }
+
+    if (program.find("plasmashell") != std::string::npos ||
+        program.find("krunner") != std::string::npos) {
+        return true;
     }
     
     if (store && store->setting_enabled("disable_in_code") &&
@@ -319,7 +397,7 @@ public:
     void on_activate(const fcitx::InputMethodEntry& entry);
 
     void key_event(fcitx::KeyEvent& event);
-    void reset(bool commit = false);
+    void reset(bool commit = false, bool force_discard = false);
     void on_cursor_rect_changed();
     void select_and_commit(int index);
     bool undo_external() { return undo_last(); }
@@ -401,13 +479,28 @@ private:
     void confirm_correction();
     void commit_undo();
     bool supports_preedit_formatting() const;
+    void clear_client_preedit_before_commit();
     void commit_literal(const std::string& text);
     void commit_candidate(const std::string& candidate_word);
-    void dismiss_candidates();
 
     // Chromium-family clients advertise SurroundingText but often ignore
     // deleteSurroundingText (ST-022/ST-026: "F ns А ты что"). Prefer Backspace.
+    [[nodiscard]] bool is_gnome_ibus_proxy() const {
+        std::string program = input_context_->program();
+        std::transform(program.begin(), program.end(), program.begin(),
+                       [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+        const bool compositor_program = program.find("gnome-shell") != std::string::npos;
+        return (input_context_->frontendName() == "ibus" && compositor_program) ||
+               (is_test_environment() && compositor_program);
+    }
     [[nodiscard]] bool surrounding_delete_is_unreliable() const {
+        // Mutter's IBus bridge can reject character offsets computed from its
+        // asynchronously updated surrounding-text snapshot. There is no delete
+        // acknowledgement, so treating that request as successful corrupts the
+        // document. Use forwarded Backspaces for single-word undo instead.
+        if (is_gnome_ibus_proxy()) {
+            return true;
+        }
         std::string program = input_context_->program();
         std::transform(program.begin(), program.end(), program.begin(),
                        [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
@@ -436,7 +529,7 @@ private:
         }
     }
     // ST-041: drop Latin leftovers left in SurroundingText after preedit rewrite.
-    std::size_t erase_leaked_latin_token_before_cursor();
+    std::size_t erase_leaked_latin_token_before_cursor(std::string_view expected_token);
     [[nodiscard]] bool uses_client_preedit() const {
         std::string program = input_context_->program();
         std::transform(program.begin(), program.end(), program.begin(),
@@ -611,7 +704,12 @@ public:
         if (is_logging_enabled(&store_)) {
             std::cerr << "[SmartType Event] uniqueName: " << entry.uniqueName()
                       << " logical: " << state->active_input_method()
-                      << " sym: " << event.key().sym() << std::endl;
+                      << " sym: " << event.key().sym()
+                      << " code: " << event.key().code()
+                      << " raw_sym: " << event.rawKey().sym()
+                      << " raw_code: " << event.rawKey().code()
+                      << " orig_sym: " << event.origKey().sym()
+                      << " orig_code: " << event.origKey().code() << std::endl;
         }
         state->key_event(event);
     }
@@ -975,7 +1073,11 @@ std::vector<std::string> SmartTypeState::get_current_suggestions() const {
     return suggestions;
 }
 
-std::size_t SmartTypeState::erase_leaked_latin_token_before_cursor() {
+std::size_t SmartTypeState::erase_leaked_latin_token_before_cursor(
+    std::string_view expected_token) {
+    if (is_gnome_ibus_proxy()) {
+        return 0;
+    }
     if (!input_context_->capabilityFlags().test(fcitx::CapabilityFlag::SurroundingText)) {
         return 0;
     }
@@ -994,6 +1096,18 @@ std::size_t SmartTypeState::erase_leaked_latin_token_before_cursor() {
     }
     const std::size_t char_len = static_cast<std::size_t>(cur - start);
     if (char_len == 0) {
+        return 0;
+    }
+    const auto token_begin = fcitx::utf8::nextNChar(
+        surrounding.text().begin(), static_cast<std::size_t>(start));
+    const auto token_end = fcitx::utf8::nextNChar(
+        surrounding.text().begin(), static_cast<std::size_t>(cur));
+    const std::string actual_token(token_begin, token_end);
+    if (smarttype::lowercase_ru(actual_token) !=
+        smarttype::lowercase_ru(expected_token)) {
+        // Some frontends exclude the live preedit from SurroundingText. Never
+        // mistake the preceding, already committed English word for a leaked
+        // copy of the current layout-typo token.
         return 0;
     }
     bool has_latin = false;
@@ -1159,18 +1273,6 @@ void SmartTypeState::update_preedit() {
     }
 }
 
-void SmartTypeState::dismiss_candidates() {
-    candidates_dismissed_ = true;
-    candidate_anchor_valid_ = false;
-    selected_candidate_ = 0;
-    suggestion_timer_.reset();
-    auto& panel = input_context_->inputPanel();
-    panel.setCandidateList(nullptr);
-    panel.setCustomInputPanelCallback({});
-    engine_->ui_client().hide();
-    input_context_->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
-}
-
 void SmartTypeState::on_cursor_rect_changed() {
     if (!candidate_anchor_valid_ || candidates_dismissed_ ||
         input_context_->inputPanel().candidateList() == nullptr) {
@@ -1203,7 +1305,11 @@ void SmartTypeState::on_cursor_rect_changed() {
     // dismissing it.  Normal typing publishes a fresh panel through
     // update_preedit(), which establishes a new anchor before the next list is
     // displayed.
-    dismiss_candidates();
+    // The client has moved the document caret away from the composition.
+    // Dropping only CandidateList leaves buffer_ and clientPreedit alive; the
+    // next delimiter then commits the old candidate at the new caret. Force a
+    // non-committing reset so the click cancels the whole stale transaction.
+    reset(false, true);
 }
 
 void SmartTypeState::schedule_preedit() {
@@ -1223,6 +1329,7 @@ void SmartTypeState::commit_candidate(const std::string& candidate_word) {
         const std::size_t L = fcitx::utf8::length(buffer_);
         erase_committed(L, buffer_.size());
     }
+    clear_client_preedit_before_commit();
     buffer_.clear();
     input_context_->commitString(candidate_word + " ");
     pending_auto_space_ = true;
@@ -1557,7 +1664,7 @@ void SmartTypeState::finish_word(const std::string& delimiter) {
     if (uses_client_preedit()) {
         // ST-041: drop Latin leftovers that toolkits committed during preedit rewrite.
         if (had_proactive_layout_switch || is_layout_corr) {
-            erase_leaked_latin_token_before_cursor();
+            erase_leaked_latin_token_before_cursor(current_token_original);
         }
 
         const std::string committed = final_replacement;
@@ -1602,7 +1709,7 @@ void SmartTypeState::finish_word(const std::string& delimiter) {
                 }
                 last_commit_.reset();
 
-            } else if (supports_preedit_formatting()) {
+            } else if (client_side_panel && supports_preedit_formatting()) {
                 // ── DBus / client-side path: delayed commit with inline highlight ──
                 // Keep the candidate list visible unchanged during the 160 ms flash.
                 // Only preedit changes; visibility is NOT toggled.
@@ -1661,7 +1768,9 @@ void SmartTypeState::finish_word(const std::string& delimiter) {
                     std::cerr << "[SmartType Correction] commit_reason=immediate-no-format | "
                               << "candidate_list_changed=yes | visibility_changed=no\n";
                 }
+                clear_client_preedit_before_commit();
                 input_context_->commitString(committed + final_delimiter);
+                engine_->ui_client().flash(input_context_, final_replacement);
                 const std::string original = std::move(buffer_);
                 buffer_.clear();
                 const std::string undo_from =
@@ -1686,6 +1795,7 @@ void SmartTypeState::finish_word(const std::string& delimiter) {
             // No correction flash, or Action::keep after proactive mid-word layout.
             // ST-026: proactive xnj→что is keep on Space but still needs undo +
             // layout switch bookkeeping (was undo_.reset() → Backspace did nothing).
+            clear_client_preedit_before_commit();
             input_context_->commitString(committed + final_delimiter);
             if (!is_correction && !expand_layout_undo) {
                 undo_.reset();
@@ -1896,10 +2006,20 @@ bool SmartTypeState::supports_preedit_formatting() const {
     return true;
 }
 
+void SmartTypeState::clear_client_preedit_before_commit() {
+    if (!uses_client_preedit()) {
+        return;
+    }
+    auto& panel = input_context_->inputPanel();
+    panel.setClientPreedit(fcitx::Text());
+    input_context_->updatePreedit();
+}
+
 
 
 void SmartTypeState::commit_literal(const std::string& text) {
     if (uses_client_preedit()) {
+        clear_client_preedit_before_commit();
         input_context_->commitString(buffer_ + text);
     } else {
         input_context_->commitString(text);
@@ -1911,7 +2031,7 @@ void SmartTypeState::commit_literal(const std::string& text) {
     flush_deferred_layout_switch("proactive_literal_commit");
 }
 
-void SmartTypeState::reset(bool commit) {
+void SmartTypeState::reset(bool commit, bool force_discard) {
     if (undo_timer_) {
         undo_timer_.reset();
         commit_undo();
@@ -1920,7 +2040,7 @@ void SmartTypeState::reset(bool commit) {
     // composing state until switch_guard_timer_ clears the generation flag.
     // Do NOT clear programmatic_switch_in_progress_ here — that allowed a
     // second reset to wipe the buffer mid-transition.
-    if (programmatic_switch_in_progress_) {
+    if (programmatic_switch_in_progress_ && !force_discard) {
         if (is_logging_enabled(&engine_->store())) {
             std::cerr << "[SmartType Layout] reset_suppressed"
                       << " commit=" << (commit ? "true" : "false")
@@ -1936,7 +2056,7 @@ void SmartTypeState::reset(bool commit) {
     // client preedit still owns the word. Discarding the buffer leaves Latin
     // leftovers in the widget ("ghbdет", "plhавствуйте"). Keep composing until
     // Escape, explicit finish_word, or reset(commit=true).
-    if (!commit && !buffer_.empty() && uses_client_preedit()) {
+    if (!commit && !force_discard && !buffer_.empty() && uses_client_preedit()) {
         if (is_logging_enabled(&engine_->store())) {
             std::cerr << "[SmartType Layout] reset_suppressed_composing"
                       << " program=" << input_context_->program()
@@ -1951,7 +2071,10 @@ void SmartTypeState::reset(bool commit) {
     if (commit) {
         commit_delayed(false);
         confirm_correction();
-        if (uses_client_preedit() && !buffer_.empty()) input_context_->commitString(buffer_);
+        if (uses_client_preedit() && !buffer_.empty()) {
+            clear_client_preedit_before_commit();
+            input_context_->commitString(buffer_);
+        }
     } else {
         if (delayed_commit_) {
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -2000,6 +2123,35 @@ void SmartTypeState::key_event(fcitx::KeyEvent& event) {
     if (!programmatic_switch_in_progress_) {
         sync_logical_input_method("key_event");
     }
+
+    if (is_disabled_context(input_context_, &engine_->store())) {
+        // Pause/exclusion turns off corrections, candidates, learning and
+        // editing transactions. X11/GNOME may nevertheless keep one physical
+        // US XKB group, so retain only the stateless character mapping required
+        // by the selected SmartType RU/EN input method. This applies equally to
+        // terminal exclusion, global pause and "pause in current application";
+        // otherwise pausing SmartType also makes Russian impossible to type.
+        reset(true);
+        if (event.key().states().testAny(
+                fcitx::KeyStates{fcitx::KeyState::Ctrl, fcitx::KeyState::Alt,
+                                 fcitx::KeyState::Super})) {
+            return;
+        }
+        const uint32_t unicode = fcitx::Key::keySymToUnicode(event.key().sym());
+        if (!unicode ||
+            !engine_->store().setting_enabled("x11_normalize_layout", false)) {
+            return;
+        }
+        const uint32_t normalized = normalize_layout_unicode(
+            unicode, event.origKey().code(), event.origKey().states(),
+            effective_input_method() == "smarttype-us");
+        if (normalized != unicode) {
+            input_context_->commitString(fcitx::utf8::UCS4ToUTF8(normalized));
+            return event.filterAndAccept();
+        }
+        return;
+    }
+
     if (undo_timer_) {
         undo_timer_.reset();
         commit_undo();
@@ -2053,13 +2205,6 @@ void SmartTypeState::key_event(fcitx::KeyEvent& event) {
             commit_delayed(false);
         }
     }
-
-    if (is_disabled_context(input_context_, &engine_->store())) {
-        reset(true);
-        return;
-    }
-
-
 
     // Hotkey: Control+Shift+Space to toggle layout of current buffer
     static const fcitx::Key hotkey("Control+Shift+space");
@@ -2286,7 +2431,7 @@ void SmartTypeState::key_event(fcitx::KeyEvent& event) {
         return;
     }
 
-    const uint32_t unicode = fcitx::Key::keySymToUnicode(event.key().sym());
+    uint32_t unicode = fcitx::Key::keySymToUnicode(event.key().sym());
     if (!unicode) {
         confirm_correction();
         reset(true);
@@ -2301,6 +2446,21 @@ void SmartTypeState::key_event(fcitx::KeyEvent& event) {
             protected_sequence_ = false;
         }
         return event.filterAndAccept();
+    }
+
+    // GNOME's IBus bridge and some X11 desktops keep the physical XKB group
+    // on US while SmartType owns the logical RU/EN layout. Normalize before
+    // classifying the key as a word character: punctuation-row QWERTY keys
+    // are Russian letters too (`[` -> `х`, `;` -> `ж`, `,` -> `б`, ...).
+    const uint32_t source_unicode = unicode;
+    const bool normalize_to_active_layout =
+        engine_->store().setting_enabled("x11_normalize_layout", false) ||
+        layout_switched_for_current_word_ ||
+        !pending_layout_input_method_.empty();
+    if (normalize_to_active_layout) {
+        unicode = normalize_layout_unicode(
+            unicode, event.origKey().code(), event.origKey().states(),
+            effective_input_method() == "smarttype-us");
     }
 
     // Hyphen is normally a word character so compounds keep working. A second
@@ -2372,50 +2532,44 @@ void SmartTypeState::key_event(fcitx::KeyEvent& event) {
             awaiting_sentence_start_ = false;
         }
 
-        // The desktop's physical XKB group may lag behind Fcitx or may not be
-        // controlled by Fcitx at all (notably Xfce/XIM). Normalize every letter
-        // to the selected SmartType IM. This is also the existing ST-041 guard
-        // against a few old-layout keysyms arriving after a proactive switch.
-        const bool normalize_to_active_layout =
-            engine_->store().setting_enabled("x11_normalize_layout", false);
-        if ((normalize_to_active_layout || layout_switched_for_current_word_ ||
-             !pending_layout_input_method_.empty()) &&
-            is_letter(output_unicode)) {
-            const bool want_en = (effective_input_method() == "smarttype-us");
-            const bool is_cyr =
-                (output_unicode >= 0x0400 && output_unicode <= 0x04FF);
-            const bool is_lat =
-                (output_unicode >= 'A' && output_unicode <= 'Z') ||
-                (output_unicode >= 'a' && output_unicode <= 'z');
-            if ((want_en && is_cyr) || (!want_en && is_lat)) {
-                const std::string mapped =
-                    smarttype::translate_layout(fcitx::utf8::UCS4ToUTF8(output_unicode));
-                if (!mapped.empty()) {
-                    const auto mapped_len = fcitx::utf8::lengthValidated(mapped);
-                    if (mapped_len == 1) {
-                        output_unicode = fcitx::utf8::getChar(mapped);
-                    }
-                }
-            }
-        }
-
         const std::string str = fcitx::utf8::UCS4ToUTF8(output_unicode);
         buffer_ += str;
         selected_candidate_ = 0;
 
+        // A proactive switch can trigger after only the first valid prefix
+        // (Gh[b] -> При). The remaining physical source keys must extend the
+        // same undo transaction; otherwise Ghbdtn -> Привет stores only Ghb.
+        if (layout_switched_for_current_word_ && !layout_switch_undo_buffer_.empty()) {
+            const uint32_t undo_unicode = normalize_layout_unicode(
+                source_unicode, event.origKey().code(), event.origKey().states(),
+                layout_switch_undo_im_ == "smarttype-us");
+            layout_switch_undo_buffer_ += fcitx::utf8::UCS4ToUTF8(undo_unicode);
+        }
+
         // ST-041: if a prior preedit rewrite left Latin in SurroundingText, drop it
         // as soon as we are in a layout-switch episode so it cannot accumulate.
         if (layout_switched_for_current_word_ || !pending_layout_input_method_.empty()) {
-            erase_leaked_latin_token_before_cursor();
+            erase_leaked_latin_token_before_cursor(layout_switch_undo_buffer_);
         }
 
-        // User continued typing after a proactive switch → accept the switch.
-        // Further Backspace must delete one character, not rewrite the whole word.
-        if (layout_switch_undo_active_ && !layout_switch_post_buffer_.empty() &&
-            buffer_.size() > layout_switch_post_buffer_.size()) {
-            layout_switch_undo_active_ = false;
-            layout_switch_undo_buffer_.clear();
-            layout_switch_post_buffer_.clear();
+        // Continuing after the first proactive prefix temporarily accepts the
+        // switch, so Backspace edits an unfinished target normally. Re-arm the
+        // transaction when that continuation reaches a complete target word:
+        // once Ghb -> При grows into Ghbdtn -> Привет, the visible automatic
+        // replacement is complete and the first Backspace should restore the
+        // full physical source even before a delimiter is typed.
+        if (layout_switched_for_current_word_ &&
+            !layout_switch_undo_buffer_.empty()) {
+            const bool complete_target =
+                engine_->corrector().is_dictionary_word(buffer_);
+            const bool source_is_word =
+                engine_->corrector().is_dictionary_word(layout_switch_undo_buffer_);
+            layout_switch_undo_active_ = complete_target && !source_is_word;
+            if (layout_switch_undo_active_) {
+                layout_switch_post_buffer_ = buffer_;
+            } else {
+                layout_switch_post_buffer_.clear();
+            }
         }
 
         // Proactive mid-word layout correction (current token only; prior committed text stays).
@@ -2477,7 +2631,7 @@ void SmartTypeState::key_event(fcitx::KeyEvent& event) {
                     defer_layout_switch(new_im, "proactive_mid_word");
                     // Drop any Latin the toolkit already materialised, then show
                     // the full translated preedit in one update (no empty flash).
-                    erase_leaked_latin_token_before_cursor();
+                    erase_leaked_latin_token_before_cursor(old_buffer);
                     update_preedit();
                     return event.filterAndAccept();
                 } else {
@@ -2802,6 +2956,13 @@ bool SmartTypeState::try_rewrite_layout_phrase_prefix(bool to_russian,
                                                      std::string& undo_replacement_prefix) {
     undo_original_prefix.clear();
     undo_replacement_prefix.clear();
+    // GNOME's IBus compositor publishes SurroundingText asynchronously and
+    // provides no success acknowledgement for DeleteSurroundingText. Mutter
+    // rejects stale offsets, after which committing the replacement duplicates
+    // or over-deletes the phrase. Prefer safe per-word layout correction here.
+    if (is_gnome_ibus_proxy()) {
+        return false;
+    }
     if (context_.empty()) {
         return false;
     }

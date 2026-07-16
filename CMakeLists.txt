@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(smarttype VERSION 0.2.1 LANGUAGES C CXX)
+project(smarttype VERSION 0.2.2 LANGUAGES C CXX)
 
 include(GNUInstallDirs)
 
@@ -93,6 +93,14 @@ add_test(
 add_test(
     NAME release-bootstrap
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/install_release_tests.sh)
+add_test(
+    NAME install-dependencies
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/install_dependency_tests.sh)
+add_test(
+    NAME kimpanel-interaction-patch
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/patch_kimpanel_tests.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/scripts/patch-kimpanel.py)
 
 option(SMARTTYPE_BUILD_FCITX "Build the Fcitx5 input method addon" ON)
 option(SMARTTYPE_BUILD_UI_DEMO "Build the legacy standalone Qt 6/QML candidate UI prototype" OFF)

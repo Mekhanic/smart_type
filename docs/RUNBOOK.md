@@ -112,6 +112,22 @@ While testing, the composing word must remain in the browser/editor field.
 Kimpanel contains candidates only. A second editable row inside the popup is a
 failure and must not be accepted as a GNOME fallback.
 
+### LibreOffice Writer uses raw XIM
+
+For a distro-packaged LibreOffice on GNOME Wayland or X11, install the GTK VCL
+plugin (`libreoffice-gtk3`) and fully close every LibreOffice process before
+reopening Writer. The normal SmartType installer does this conditionally when
+it detects `libreoffice-core`.
+
+With Writer open, Fcitx `Controller1.DebugInfo` must show
+`program:soffice frontend:dbus` with Preedit capability. A context such as
+`program:soffice.bin frontend:xim` without Preedit is unsupported: SmartType
+passes its keys through to prevent document corruption, and `doctor.sh`
+reports the unsafe live context. Confirm the process maps both
+`libvclplug_gtk3lo.so` and `im-fcitx5.so`, then test Alt+Shift in both
+directions and `Приивет ` → `Привет `. Snap/Flatpak packages need equivalent
+integration inside their own sandbox.
+
 Ubuntu Firefox Snap may report `frontend:fcitx4` and request
 `ClientSideInputPanel`. In that case its bundled legacy GTK module, rather than
 Kimpanel, owns the popup. Corrections still run through SmartType, but popup
@@ -160,6 +176,26 @@ systemctl --user status smarttype-tray.service
 journalctl --user -b -u smarttype-tray.service
 systemctl --user show smarttype-tray.service -p MainPID
 ```
+
+### SmartType methods are listed as unavailable
+
+If Fcitx lists “SmartType Русский/English (Unavailable)”, the input-method
+descriptions are installed but the engine library is not loaded. Do not treat
+an Fcitx restart alone as a fix. Check the effective path and loaded mappings:
+
+```bash
+systemctl --user show-environment | grep '^FCITX_ADDON_DIRS='
+grep -R '^FCITX_ADDON_DIRS=' ~/.config/environment.d
+pid=$(pgrep -n -x fcitx5)
+grep 'smarttype.*\.so' "/proc/$pid/maps"
+~/.local/share/smarttype/doctor.sh
+```
+
+The user addon path must start with `~/.local/lib/fcitx5`. Remove the retired
+SmartType-owned `~/.config/environment.d/fcitx5-smarttype.conf` if it still
+overrides `90-smarttype.conf`, rerun the current installer, and fully restart
+Fcitx or log out. Success requires the running process to map both canonical
+libraries; seeing the method names in a menu is not proof.
 
 ### Session IM durability (ST-018 / ST-028) — Telegram “dead input”
 

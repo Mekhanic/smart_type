@@ -27,6 +27,39 @@ FCITX_SETTINGS = {
     },
 }
 
+GNOME_ENABLED_ADDONS = ("kimpanel", "ibusfrontend")
+GNOME_DISABLED_ADDONS = ("smarttypeui",)
+
+
+def configure_addon_overrides(parser: configparser.RawConfigParser) -> None:
+    """Persist addon state in the Fcitx global config.
+
+    Fcitx does not read an ``[Addon] Enabled=`` key from an addon's own
+    configuration file.  It stores overrides as indexed lists below
+    ``Behavior/EnabledAddons`` and ``Behavior/DisabledAddons``.
+    """
+
+    enabled_section = "Behavior/EnabledAddons"
+    disabled_section = "Behavior/DisabledAddons"
+    managed = set(GNOME_ENABLED_ADDONS) | set(GNOME_DISABLED_ADDONS)
+
+    def values(section: str) -> list[str]:
+        if not parser.has_section(section):
+            return []
+        return [value for key, value in parser.items(section) if key.isdigit()]
+
+    enabled = [value for value in values(enabled_section) if value not in managed]
+    disabled = [value for value in values(disabled_section) if value not in managed]
+    enabled.extend(GNOME_ENABLED_ADDONS)
+    disabled.extend(GNOME_DISABLED_ADDONS)
+
+    for section, addons in ((enabled_section, enabled), (disabled_section, disabled)):
+        if parser.has_section(section):
+            parser.remove_section(section)
+        parser.add_section(section)
+        for index, addon in enumerate(addons):
+            parser.set(section, str(index), addon)
+
 
 def configure_fcitx(path: pathlib.Path) -> None:
     parser = configparser.RawConfigParser(interpolation=None, strict=False)
@@ -38,6 +71,7 @@ def configure_fcitx(path: pathlib.Path) -> None:
             parser.add_section(section)
         for key, value in values.items():
             parser.set(section, key, value)
+    configure_addon_overrides(parser)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as stream:
         parser.write(stream, space_around_delimiters=False)
@@ -156,9 +190,6 @@ def main() -> None:
     args = parser.parse_args()
 
     configure_fcitx(args.fcitx_config)
-    set_addon(args.config_dir / "kimpanel.conf", True)
-    set_addon(args.config_dir / "ibusfrontend.conf", True)
-    set_addon(args.config_dir / "smarttypeui.conf", False)
     configure_environment(args.environment_file)
     configure_autostart(args.autostart_file)
     if args.enable_session_extensions:

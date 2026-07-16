@@ -59,7 +59,7 @@ sed -i 's|^Exec=.*|Exec=smarttype-tray|' \
 install -m755 "$ROOT/install.sh" "$BUNDLE/install.sh"
 for script in install-user.sh doctor.sh uninstall-user.sh configure-fcitx-profile.py \
     configure-fcitx-gnome.py configure-fcitx-x11.py fcitx5-layout-sync.py \
-    prepare-gnome-kimpanel.sh; do
+    prepare-gnome-kimpanel.sh install-dependencies.sh patch-kimpanel.py; do
     install -m755 "$ROOT/scripts/$script" "$BUNDLE/scripts/$script"
 done
 install -m644 "$ROOT/config/fcitx5-layout-sync.service" "$BUNDLE/config/fcitx5-layout-sync.service"
@@ -72,6 +72,7 @@ printf '%s\n' "$TARGET" > "$BUNDLE/TARGET"
     > "$BUNDLE/payload.sha256"
 (cd "$BUNDLE/payload" && sha256sum --check "$BUNDLE/payload.sha256")
 "$ROOT/tests/prebuilt_installer_tests.sh" "$BUNDLE/payload"
+"$ROOT/tests/release_bundle_tests.sh" "$BUNDLE"
 
 tar -czf "$OUT_DIR/$NAME.tar.gz" -C "$STAGE" "$NAME"
 (cd "$OUT_DIR" && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256")

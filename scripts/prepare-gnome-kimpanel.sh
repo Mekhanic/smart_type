@@ -6,12 +6,13 @@ DESTINATION=${1:-}
     echo "Usage: scripts/prepare-gnome-kimpanel.sh DESTINATION" >&2
     exit 2
 }
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 KIMPANEL_COMMIT=ff828412608da89d8ede464c85649659a19a7650
 KIMPANEL_SHA256=68fdf340af8c7281c9ca215f1505a475b0c28a27b7d00193f8a486dad2e0dc13
 KIMPANEL_URL="https://github.com/wengxt/gnome-shell-extension-kimpanel/archive/${KIMPANEL_COMMIT}.tar.gz"
 
-for command in tar sha256sum sed install; do
+for command in tar sha256sum sed install python3; do
     command -v "$command" >/dev/null || {
         echo "Required command is missing: $command" >&2
         exit 1
@@ -56,6 +57,7 @@ install -m644 "$source_dir/COPYING" "$DESTINATION/COPYING"
 install -m644 "$source_dir/README" "$DESTINATION/README"
 sed 's|@localedir@|/usr/share/locale|g' "$source_dir/metadata.json.in" \
     > "$DESTINATION/metadata.json"
+python3 "$ROOT/patch-kimpanel.py" "$DESTINATION"
 
 if command -v glib-compile-schemas >/dev/null; then
     glib-compile-schemas "$DESTINATION/schemas"

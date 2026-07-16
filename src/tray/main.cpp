@@ -24,6 +24,7 @@
 #include <memory>
 #include <utility>
 #include <chrono>
+#include <algorithm>
 
 namespace {
 
@@ -74,16 +75,12 @@ public:
                 });
         rebuild();
 
-        if (!QSystemTrayIcon::isSystemTrayAvailable()) {
-            showSettings(0);
-            if (activeSettingsDialog_) {
-                connect(activeSettingsDialog_, &QDialog::finished, qApp, &QCoreApplication::quit);
-            } else {
-                QTimer::singleShot(0, qApp, &QCoreApplication::quit);
-            }
-        } else {
-            tray_.show();
-        }
+        // Xfce commonly starts user services before xfce4-panel has claimed
+        // the system-tray selection. QSystemTrayIcon will register itself
+        // automatically when the tray appears later, provided it is already
+        // visible. Opening Settings here made every cold login look like the
+        // user had launched the application explicitly.
+        tray_.show();
 
         connect(&statusTimer_, &QTimer::timeout, this, [this]() { refreshRuntimeStatus(); });
         connect(&statusProcess_, &QProcess::finished, this,
@@ -267,6 +264,17 @@ int main(int argc, char** argv) {
                       << " window=" << !QApplication::windowIcon().isNull() << '\n';
         }
         return ok ? 0 : 1;
+    }
+    if (arguments.contains(QStringLiteral("--check-tray-startup"))) {
+        Tray tray;
+        QTimer::singleShot(0, &application, [&application]() {
+            const auto topLevelWidgets = QApplication::topLevelWidgets();
+            const bool unsolicitedWindow = std::any_of(
+                topLevelWidgets.cbegin(), topLevelWidgets.cend(),
+                [](const QWidget* widget) { return widget->isVisible(); });
+            application.exit(unsolicitedWindow ? 1 : 0);
+        });
+        return application.exec();
     }
     if (arguments.contains(QStringLiteral("--settings")) ||
         arguments.contains(QStringLiteral("--dictionary"))) {

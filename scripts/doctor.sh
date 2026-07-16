@@ -28,6 +28,19 @@ check() {
     fi
 }
 
+fcitx_config_has_addon() {
+    local file=$1 section=$2 addon=$3
+    awk -v wanted="[$section]" -v addon="$addon" '
+        /^\[/ { current=$0; next }
+        current == wanted && /^[0-9]+=/ {
+            value=$0
+            sub(/^[0-9]+=/, "", value)
+            if (value == addon) found=1
+        }
+        END { exit found ? 0 : 1 }
+    ' "$file"
+}
+
 check "fcitx5 runtime" command -v fcitx5
 check "SmartType addon description" test -f "$PREFIX/share/fcitx5/addon/smarttype.conf"
 check "SmartType input method description" test -f "$PREFIX/share/fcitx5/inputmethod/smarttype.conf"
@@ -61,21 +74,77 @@ if [[ -x "$PREFIX/bin/smarttypectl" ]]; then
         fail=1
     fi
 fi
-# Accept install-user name (90-smarttype.conf) or hand-named drop-ins with FCITX_ADDON_DIRS.
-if [[ -f "$HOME/.config/environment.d/90-smarttype.conf" ]] ||
-   grep -Rqs 'FCITX_ADDON_DIRS=' "$HOME/.config/environment.d/" 2>/dev/null; then
-    printf 'OK    SmartType environment configuration (FCITX_ADDON_DIRS)\n'
+environment_dir="${XDG_CONFIG_HOME:-$HOME/.config}/environment.d"
+configured_addon_dirs=""
+if [[ -d $environment_dir ]]; then
+    # environment.d applies files in lexical order; the final assignment wins.
+    # Reading only 90-smarttype.conf misses a stale, later-sorting legacy file.
+    for environment_file in "$environment_dir"/*.conf; do
+        [[ -f $environment_file ]] || continue
+        value=$(sed -n 's/^FCITX_ADDON_DIRS=//p' "$environment_file" | tail -n1)
+        [[ -n $value ]] && configured_addon_dirs=$value
+    done
+fi
+canonical_addon_dir="$PREFIX/lib/fcitx5"
+if [[ :$configured_addon_dirs: == *":$canonical_addon_dir:"* ]]; then
+    printf 'OK    SmartType environment configuration includes the canonical addon directory\n'
 else
-    printf 'FAIL  SmartType environment configuration (no FCITX_ADDON_DIRS in environment.d)\n'
-    printf '      Fix: re-run scripts/install-user.sh\n'
+    printf 'FAIL  effective environment.d FCITX_ADDON_DIRS misses %s: %s\n' \
+        "$canonical_addon_dir" "${configured_addon_dirs:-not configured}"
+    printf '      Fix: re-run scripts/install-user.sh and fully restart Fcitx\n'
     fail=1
 fi
 
 fcitx_pid=$(pgrep -n -x fcitx5 2>/dev/null || true)
 if [[ -n $fcitx_pid ]]; then
     printf 'OK    fcitx5 process is running\n'
+
+    loaded_engine=$("$PREFIX/bin/smarttypectl" status 2>/dev/null |
+        sed -n 's/^loaded engine path: //p' | head -n1)
+    canonical_engine="$PREFIX/lib/fcitx5/smarttype.so"
+    if [[ $loaded_engine == "$canonical_engine" ]]; then
+        printf 'OK    running Fcitx loaded the canonical SmartType engine\n'
+    else
+        printf 'FAIL  running Fcitx loaded a stale/non-canonical SmartType engine: %s\n' \
+            "${loaded_engine:-unknown}"
+        printf '      Fix: fully restart Fcitx or log out after reinstalling SmartType\n'
+        fail=1
+    fi
+
+    fcitx_debug_info=$(busctl --user call org.fcitx.Fcitx5 /controller \
+        org.fcitx.Fcitx.Controller1 DebugInfo 2>/dev/null || true)
+    if [[ $fcitx_debug_info =~ program:soffice[^[:space:]\\]*[[:space:]]frontend:xim ]]; then
+        printf 'FAIL  LibreOffice is connected through unsafe raw XIM without toolkit preedit\n'
+        printf '      Fix: install libreoffice-gtk3 and fully close/reopen LibreOffice\n'
+        printf '      Expected after restart: program:soffice frontend:dbus\n'
+        fail=1
+    fi
 else
     printf 'WARN  fcitx5 is not running; check desktop integration and relogin\n'
+fi
+
+libreoffice_installed=0
+libreoffice_gtk_installed=0
+if command -v rpm >/dev/null 2>&1 && rpm -q libreoffice-core >/dev/null 2>&1; then
+    libreoffice_installed=1
+    rpm -q libreoffice-gtk3 >/dev/null 2>&1 && libreoffice_gtk_installed=1
+elif command -v dpkg-query >/dev/null 2>&1 &&
+     dpkg-query -W -f='${Status}\n' libreoffice-core 2>/dev/null |
+         grep -Fxq 'install ok installed'; then
+    libreoffice_installed=1
+    if dpkg-query -W -f='${Status}\n' libreoffice-gtk3 2>/dev/null |
+       grep -Fxq 'install ok installed'; then
+        libreoffice_gtk_installed=1
+    fi
+fi
+if (( libreoffice_installed )); then
+    if (( libreoffice_gtk_installed )); then
+        printf 'OK    LibreOffice GTK/Fcitx integration package is installed\n'
+    else
+        printf 'FAIL  LibreOffice GTK/Fcitx integration package is missing\n'
+        printf '      Fix: install libreoffice-gtk3 and fully close/reopen LibreOffice\n'
+        fail=1
+    fi
 fi
 
 if systemctl --user is-enabled --quiet smarttype-tray.service 2>/dev/null; then
@@ -105,7 +174,7 @@ if [[ -z $desktop_name ]]; then
 fi
 session_type=${XDG_SESSION_TYPE:-}
 manager_environment=$(systemctl --user show-environment 2>/dev/null || true)
-if [[ -z $session_type ]]; then
+if [[ -z $session_type || ${session_type,,} == tty ]]; then
     session_type=$(printf '%s\n' "$manager_environment" |
         sed -n 's/^XDG_SESSION_TYPE=//p' | head -n1)
 fi
@@ -148,20 +217,33 @@ if (( gnome_session )); then
         fail=1
     fi
     for addon in kimpanel ibusfrontend; do
-        addon_config="${XDG_CONFIG_HOME:-$HOME/.config}/fcitx5/conf/$addon.conf"
-        if [[ -f $addon_config ]] && grep -qx 'Enabled=True' "$addon_config"; then
-            printf 'OK    GNOME Fcitx addon enabled: %s\n' "$addon"
+        if [[ -f $fcitx_config ]] &&
+           fcitx_config_has_addon "$fcitx_config" Behavior/EnabledAddons "$addon"; then
+            printf 'OK    GNOME Fcitx addon force-enabled: %s\n' "$addon"
         else
-            printf 'FAIL  GNOME Fcitx addon is not enabled: %s\n' "$addon"
+            printf 'FAIL  GNOME Fcitx addon is not force-enabled: %s\n' "$addon"
             fail=1
         fi
     done
-    smarttypeui_config="${XDG_CONFIG_HOME:-$HOME/.config}/fcitx5/conf/smarttypeui.conf"
-    if [[ -f $smarttypeui_config ]] && grep -qx 'Enabled=False' "$smarttypeui_config"; then
-        printf 'OK    GNOME delegates candidate rendering to Kimpanel\n'
+    if [[ -f $fcitx_config ]] &&
+       fcitx_config_has_addon "$fcitx_config" Behavior/DisabledAddons smarttypeui; then
+        printf 'OK    GNOME persistently disables the native SmartType UI\n'
     else
-        printf 'FAIL  SmartType native UI must be disabled for GNOME Kimpanel\n'
+        printf 'FAIL  SmartType native UI is not disabled in Fcitx global config\n'
         fail=1
+    fi
+    if [[ -n $fcitx_pid ]]; then
+        current_ui=$(busctl --user call org.fcitx.Fcitx5 /controller \
+            org.fcitx.Fcitx.Controller1 CurrentUI 2>/dev/null |
+            sed -n 's/^s "\(.*\)"$/\1/p')
+        if [[ $current_ui == kimpanel ]]; then
+            printf 'OK    running Fcitx delegates candidates to Kimpanel\n'
+        else
+            printf 'FAIL  running Fcitx UI is %s (expected kimpanel)\n' \
+                "${current_ui:-unknown}"
+            printf '      Fix: restart Fcitx or log out after reinstalling SmartType\n'
+            fail=1
+        fi
     fi
     gnome_extension="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/kimpanel@kde.org"
     check "GNOME Kimpanel extension files" test -f "$gnome_extension/metadata.json"
@@ -199,6 +281,19 @@ if (( gnome_session )); then
         fi
     fi
 elif [[ ${desktop_name,,} == *kde* || ${desktop_name,,} == *plasma* ]]; then
+    fcitx_config="${XDG_CONFIG_HOME:-$HOME/.config}/fcitx5/config"
+    if [[ -f $fcitx_config ]] &&
+       grep -qx 'ActiveByDefault=True' "$fcitx_config" &&
+       grep -qx 'ShareInputState=All' "$fcitx_config" &&
+       grep -qx 'EnumerateSkipFirst=True' "$fcitx_config" &&
+       grep -qx '0=Alt+Shift_L' "$fcitx_config" &&
+       grep -qx '1=Shift+Alt_L' "$fcitx_config"; then
+        printf 'OK    Fcitx can own KDE Alt+Shift when KDE has no RU layout index\n'
+    else
+        printf 'FAIL  KDE fallback Alt+Shift is not configured in Fcitx\n'
+        printf '      Re-run the SmartType KDE installer\n'
+        fail=1
+    fi
     if systemctl --user is-active --quiet fcitx5-layout-sync.service; then
         printf 'OK    SmartType KDE layout synchronizer is running\n'
     else
@@ -271,8 +366,12 @@ if [[ $fcitx_session_type == wayland ]] &&
     fi
 fi
 
-if [[ -n $fcitx_pid ]] && [[ $(fcitx5-remote -n 2>/dev/null) == smarttype* ]]; then
+active_input_method=$(fcitx5-remote -n 2>/dev/null || true)
+if [[ -n $fcitx_pid ]] && [[ $active_input_method == smarttype* ]]; then
     printf 'OK    SmartType is the active input method\n'
+elif [[ -n $fcitx_pid && $active_input_method == keyboard-us ]]; then
+    printf 'FAIL  Fcitx is stuck on keyboard-us; SmartType cannot process input\n'
+    fail=1
 else
     printf 'WARN  SmartType is not active; select it in fcitx5-configtool\n'
 fi
@@ -383,9 +482,13 @@ else
     printf '      Optional: create ~/.config/autostart/imsettings-start.desktop with Hidden=true\n'
 fi
 
+imsettings_xinputrc="${XDG_CONFIG_HOME:-$HOME/.config}/imsettings/xinputrc"
 if (( x11_session )) && [[ ${qt_im,,} == fcitx && ${gtk_im,,} == fcitx &&
                            $xmodifiers == *@im=fcitx* ]]; then
     printf 'OK    ~/.xinputrc is not required with the managed X11 environment\n'
+elif [[ -e $imsettings_xinputrc || -L $imsettings_xinputrc ]] &&
+     [[ $(readlink -f "$imsettings_xinputrc" 2>/dev/null) == *fcitx* ]]; then
+    printf 'OK    imsettings selects the Fcitx profile (%s)\n' "$imsettings_xinputrc"
 elif [[ -e $HOME/.xinputrc ]]; then
     if grep -Eqs 'fcitx5?|XINPUT_PROFILE' "$HOME/.xinputrc" 2>/dev/null ||
        [[ $(readlink -f "$HOME/.xinputrc" 2>/dev/null) == *fcitx* ]]; then
@@ -394,8 +497,9 @@ elif [[ -e $HOME/.xinputrc ]]; then
         printf 'WARN  ~/.xinputrc exists but does not clearly select fcitx5\n'
     fi
 else
-    # Not fatal when environment.d + Hidden imsettings keep the session healthy.
-    printf 'WARN  ~/.xinputrc missing (optional ST-018 hardening if imsettings re-engages)\n'
+    # Not fatal on distributions without imsettings when environment.d owns
+    # the session. Fedora Plasma should have the modern path above.
+    printf 'WARN  no Fcitx imsettings profile (optional outside Fedora Plasma)\n'
 fi
 
 exit "$fail"

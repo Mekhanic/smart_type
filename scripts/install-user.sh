@@ -72,6 +72,17 @@ command -v fcitx5 >/dev/null || {
 systemctl --user stop smarttype-tray.service 2>/dev/null || true
 pkill -x smarttype-tray 2>/dev/null || true
 
+# Fedora preview builds used lib64/fcitx5 and sometimes left lib/fcitx5 as a
+# symlink to that directory. Releases use a real lib/fcitx5 directory on every
+# distribution. Detach only the symlink here; its target may contain unrelated
+# user addons and must not be removed wholesale.
+canonical_addon_dir="$PREFIX/lib/fcitx5"
+legacy_addon_dir="$PREFIX/lib64/fcitx5"
+if [[ -L $canonical_addon_dir ]]; then
+    rm -f "$canonical_addon_dir"
+    mkdir -p "$canonical_addon_dir"
+fi
+
 if [[ -n $PREBUILT_DIR ]]; then
     required=(
         bin/smarttypectl
@@ -116,6 +127,15 @@ else
     cmake --install "$BUILD"
 fi
 
+# Releases now use one canonical user addon directory. Old Fedora previews
+# installed the same modules under lib64; leaving those files behind lets an
+# already-running session keep loading a stale engine after an upgrade.
+if [[ -f "$PREFIX/lib/fcitx5/smarttype.so" ]]; then
+    rm -f "$legacy_addon_dir/smarttype.so" "$legacy_addon_dir/smarttypeui.so"
+    rmdir "$legacy_addon_dir" 2>/dev/null || true
+    rmdir "$PREFIX/lib64" 2>/dev/null || true
+fi
+
 KIMPANEL_SOURCE="$PREFIX/share/smarttype/gnome/kimpanel@kde.org"
 if (( ENABLE_GNOME_WAYLAND )) && [[ ! -f $KIMPANEL_SOURCE/metadata.json ]]; then
     PREPARE_KIMPANEL="$ROOT/scripts/prepare-gnome-kimpanel.sh"
@@ -124,6 +144,17 @@ if (( ENABLE_GNOME_WAYLAND )) && [[ ! -f $KIMPANEL_SOURCE/metadata.json ]]; then
         exit 1
     }
     "$PREPARE_KIMPANEL" "$KIMPANEL_SOURCE"
+fi
+if (( ENABLE_GNOME_WAYLAND )); then
+    KIMPANEL_PATCHER="$ROOT/scripts/patch-kimpanel.py"
+    [[ -x $KIMPANEL_PATCHER ]] || {
+        echo "FAIL  missing GNOME Kimpanel interaction patcher: $KIMPANEL_PATCHER" >&2
+        exit 1
+    }
+    # Upgrade payloads made before the interaction fix may already contain a
+    # pinned Kimpanel tree. Patch it idempotently before copying it into the
+    # live GNOME extension directory; existence alone is not freshness.
+    python3 "$KIMPANEL_PATCHER" "$KIMPANEL_SOURCE"
 fi
 
 # Retire every historical state-specific icon. The tray now embeds its two
@@ -162,6 +193,11 @@ elif command -v kwriteconfig6 >/dev/null; then
 fi
 
 mkdir -p "$HOME/.config/environment.d"
+# Preview builds installed this later-sorting drop-in. Even a correct
+# 90-smarttype.conf is ignored when the legacy file still assigns lib64 after
+# it, leaving both SmartType input methods visible but unavailable. The file is
+# SmartType-owned, so retire it during every upgrade.
+rm -f "$HOME/.config/environment.d/fcitx5-smarttype.conf"
 addon_dirs=()
 for dir in "$PREFIX/lib/fcitx5" "$PREFIX/lib64/fcitx5" /usr/lib/fcitx5 /usr/lib64/fcitx5 /usr/lib/*-linux-gnu/fcitx5; do
     [[ -d "$dir" ]] && addon_dirs+=("$dir")
@@ -172,6 +208,58 @@ cat > "$HOME/.config/environment.d/90-smarttype.conf" <<EOF
 FCITX_ADDON_DIRS=$addon_dirs_joined
 XMODIFIERS=@im=fcitx
 EOF
+
+# Fedora's desktop autostarts imsettings after environment.d has been loaded.
+# Its stock launcher exports XMODIFIERS=@im=none, which leaves the Fcitx tray
+# visible but makes SmartType unusable after a clean login. Shadow only an
+# installed/existing imsettings launcher, preserve a user override, and mark
+# our replacement so uninstall can restore it exactly.
+imsettings_source=${SMARTTYPE_IMSETTINGS_AUTOSTART_SOURCE:-/etc/xdg/autostart/imsettings-start.desktop}
+imsettings_override="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/imsettings-start.desktop"
+imsettings_backup="$imsettings_override.before-smarttype"
+if (( integration_modes == 1 )) &&
+   [[ -e $imsettings_source || -e $imsettings_override ]]; then
+    mkdir -p "$(dirname "$imsettings_override")"
+    if [[ -e $imsettings_override ]] &&
+       ! grep -qx 'X-SmartType-Managed=true' "$imsettings_override" 2>/dev/null &&
+       [[ ! -e $imsettings_backup ]]; then
+        cp -a "$imsettings_override" "$imsettings_backup"
+    fi
+    cat > "$imsettings_override" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Input Method Settings (disabled by SmartType)
+Hidden=true
+X-GNOME-Autostart-enabled=false
+X-SmartType-Managed=true
+EOF
+    echo "OK  imsettings autostart disabled so it cannot replace Fcitx after login."
+fi
+
+# Fedora Plasma also sources the selected imsettings profile from its early
+# plasma-workspace environment hook, before XDG autostart is considered. The
+# modern per-user path is ~/.config/imsettings/xinputrc (not ~/.xinputrc).
+# Selecting the distro's Fcitx 5 profile gives the whole login session
+# XMODIFIERS=@im=fcitx5 while its Wayland guard leaves QT_IM_MODULE unset.
+imsettings_fcitx_profile=${SMARTTYPE_IMSETTINGS_FCITX_PROFILE:-/etc/X11/xinit/xinput.d/fcitx5.conf}
+imsettings_user_dir="${XDG_CONFIG_HOME:-$HOME/.config}/imsettings"
+imsettings_xinputrc="$imsettings_user_dir/xinputrc"
+imsettings_xinputrc_backup="$imsettings_user_dir/xinputrc.before-smarttype"
+imsettings_xinputrc_marker="$imsettings_user_dir/xinputrc.smarttype-managed"
+if (( integration_modes == 1 )) && [[ -r $imsettings_fcitx_profile ]]; then
+    mkdir -p "$imsettings_user_dir"
+    if [[ -e $imsettings_xinputrc || -L $imsettings_xinputrc ]]; then
+        current_xinputrc=$(readlink -f "$imsettings_xinputrc" 2>/dev/null || true)
+        expected_xinputrc=$(readlink -f "$imsettings_fcitx_profile" 2>/dev/null || true)
+        if [[ $current_xinputrc != "$expected_xinputrc" &&
+              ! -e $imsettings_xinputrc_backup ]]; then
+            mv "$imsettings_xinputrc" "$imsettings_xinputrc_backup"
+        fi
+    fi
+    ln -sfn "$imsettings_fcitx_profile" "$imsettings_xinputrc"
+    printf '%s\n' "$imsettings_fcitx_profile" > "$imsettings_xinputrc_marker"
+    echo "OK  Fedora imsettings profile set to Fcitx 5 for the next login."
+fi
 
 if (( ENABLE_GNOME_WAYLAND )); then
     GNOME_CONFIGURATOR="$PREFIX/bin/configure-fcitx-gnome.py"
@@ -301,6 +389,25 @@ if (( ENABLE_KDE_LAYOUT_SYNC )) && [[ ! -x "$LAYOUT_SYNC_BIN" ]]; then
 elif (( ENABLE_KDE_LAYOUT_SYNC )) && [[ ! -f "$LAYOUT_SYNC_UNIT_SRC" ]]; then
     echo "Предупреждение: нет $LAYOUT_SYNC_UNIT_SRC" >&2
 elif (( ENABLE_KDE_LAYOUT_SYNC )); then
+    # Never rewrite the user's KDE layout list. On a one-layout or custom-order
+    # profile the bridge yields ownership to Fcitx, and the engine maps physical
+    # keysyms to the selected SmartType IM instead of trusting KDE index 0.
+    # Configure Fcitx itself to own Alt+Shift and skip the technical
+    # keyboard-us item. This is required when KDE has no RU layout index and
+    # therefore cannot emit a useful layoutChanged signal.
+    KDE_FCITX_CONFIGURATOR="$PREFIX/bin/configure-fcitx-x11.py"
+    if [[ ! -x "$KDE_FCITX_CONFIGURATOR" ]]; then
+        echo "FAIL  missing installed Fcitx configurator: $KDE_FCITX_CONFIGURATOR" >&2
+        exit 1
+    fi
+    "$KDE_FCITX_CONFIGURATOR" \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/fcitx5/config"
+    "$PREFIX/bin/smarttypectl" set-setting x11_normalize_layout true
+    systemctl --user stop fcitx5-layout-sync.service 2>/dev/null || true
+    rm -f "$PREFIX/bin/configure-kde-layouts.py" \
+          "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/smarttype-kde-layouts.service" \
+          "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/plasma-kwin_wayland.service.d/20-smarttype-layouts.conf" \
+          "${XDG_CONFIG_HOME:-$HOME/.config}/plasma-workspace/env/smarttype-kde-layouts.sh"
     mkdir -p "$(dirname "$LAYOUT_SYNC_UNIT_DST")"
     # Unit uses ExecStart=%h/.local/bin/... (portable). If PREFIX is not
     # $HOME/.local, rewrite ExecStart to the installed script path.
@@ -380,6 +487,13 @@ if (( CONFIGURE_PROFILE )) && command -v fcitx5-remote >/dev/null; then
     fcitx5-remote -r 2>/dev/null || true
     fcitx5-remote -o 2>/dev/null || true
     fcitx5-remote -s smarttype-us 2>/dev/null || true
+fi
+if [[ $("$PREFIX/bin/smarttypectl" get-setting enabled 2>/dev/null) == "enabled: 1" ]]; then
+    echo "OK  SmartType is enabled."
+else
+    echo "WARN  SmartType remains disabled by the existing user preference." >&2
+    echo "      Enable it from the tray or run:" >&2
+    echo "      $PREFIX/bin/smarttypectl set-setting enabled 1" >&2
 fi
 if (( ENABLE_KDE_WAYLAND_IME )); then
     echo "Log out and back in before testing; do not restart Fcitx from its tray on Wayland."

@@ -9,6 +9,7 @@
 #include <fcitx/inputpanel.h>
 #include <fcitx/instance.h>
 #include <testfrontend_public.h>
+#include "smarttype/fcitx_safety.hpp"
 #include "smarttype/personal_store.hpp"
 
 #include <algorithm>
@@ -160,9 +161,10 @@ int main() {
         frontend->call<ITestFrontend::pushCommitExpectation>("0");
         frontend->call<ITestFrontend::pushCommitExpectation>(" ");
         frontend->call<ITestFrontend::pushCommitExpectation>("% ");
+        frontend->call<ITestFrontend::pushCommitExpectation>("с");
         frontend->call<ITestFrontend::pushCommitExpectation>("севодня");
         frontend->call<ITestFrontend::pushCommitExpectation>("Севодня");
-        frontend->call<ITestFrontend::pushCommitExpectation>("севодня");
+        frontend->call<ITestFrontend::pushCommitExpectation>(" ");
         frontend->call<ITestFrontend::pushCommitExpectation>("п");
 
         const auto uuid = frontend->call<ITestFrontend::createInputContext>("telegram-desktop");
@@ -365,12 +367,20 @@ int main() {
         sendAscii("10 ");
         frontend->call<ITestFrontend::keyEvent>(uuid, Key(FcitxKey_percent), false);
 
+        // GNOME owns one physical US XKB group. Global pause must disable
+        // correction/UI, not the selected SmartType RU/EN layout itself.
+        runtime_store.set_setting("x11_normalize_layout", true);
+        instance.setCurrentInputMethod(context, "smarttype", false);
         runtime_store.set_setting("enabled", false);
-        if (frontend->call<ITestFrontend::sendKeyEvent>(
-                uuid, Key(FcitxKey_Cyrillic_es), false)) {
+        if (!frontend->call<ITestFrontend::sendKeyEvent>(
+                uuid, Key("c"), false) ||
+            !context->inputPanel().clientPreedit().empty() ||
+            context->inputPanel().candidateList() != nullptr) {
+            std::cerr << "FAIL: global pause disabled GNOME RU layout mapping\n";
             std::abort();
         }
         runtime_store.set_setting("enabled", true);
+        runtime_store.set_setting("x11_normalize_layout", false);
 
         runtime_store.set_setting("suggestions", false);
         for (const auto& key : typo) frontend->call<ITestFrontend::keyEvent>(uuid, key, false);
@@ -425,12 +435,22 @@ int main() {
 
         // A candidate panel is anchored to the text caret. A mouse click moves
         // the client caret asynchronously, sometimes immediately after a key
-        // event. The panel must dismiss instead of following that external
-        // cursor-rect change; otherwise it jumps to the click position.
+        // event. The entire old composition must be cancelled, not merely the
+        // visible candidate list. Otherwise the exact owner regression is:
+        // type a typo on line 1, click line 3, press Space, and SmartType
+        // commits the line-1 candidate at the new line-3 caret.
         for (const auto& key : typo) frontend->call<ITestFrontend::keyEvent>(uuid, key, false);
         if (context->inputPanel().candidateList() == nullptr) std::abort();
         context->setCursorRect(Rect(240, 120, 1, 20));
-        if (context->inputPanel().candidateList() != nullptr) std::abort();
+        if (context->inputPanel().candidateList() != nullptr ||
+            !context->inputPanel().clientPreedit().empty()) {
+            std::cerr << "FAIL: caret relocation left the old composition active\n";
+            std::abort();
+        }
+        // SmartType owns delimiters even with an empty buffer. It must commit
+        // exactly the new caret's Space, never the discarded word/candidate.
+        frontend->call<ITestFrontend::keyEvent>(
+            uuid, Key(FcitxKey_space), false);
         delete_watcher.reset();
         frontend->call<ITestFrontend::keyEvent>(uuid, Key(FcitxKey_Escape), false);
 
@@ -449,12 +469,99 @@ int main() {
         }
         frontend->call<ITestFrontend::destroyInputContext>(uuid);
 
+        runtime_store.set_setting("disable_in_terminals", true);
         const auto terminal_uuid = frontend->call<ITestFrontend::createInputContext>("org.kde.konsole");
         if (frontend->call<ITestFrontend::sendKeyEvent>(
                 terminal_uuid, Key(FcitxKey_Cyrillic_es), false)) {
             std::abort();
         }
         frontend->call<ITestFrontend::destroyInputContext>(terminal_uuid);
+
+        // Kali Xfce uses QTerminal, which does not advertise Fcitx's Terminal
+        // capability. The program-name fallback must therefore enforce the
+        // user-visible "Не исправлять в терминалах" setting.
+        const auto qterminal_uuid =
+            frontend->call<ITestFrontend::createInputContext>("qterminal");
+        if (frontend->call<ITestFrontend::sendKeyEvent>(
+                qterminal_uuid, Key(FcitxKey_Cyrillic_es), false)) {
+            std::cerr << "FAIL: QTerminal bypassed disable_in_terminals\n";
+            std::abort();
+        }
+
+        // Kali/X11 keeps its physical XKB group on US and uses SmartType's two
+        // logical input methods for RU/EN. Terminal exclusion must therefore
+        // preserve literal layout mapping without enabling correction/preedit.
+        runtime_store.set_setting("x11_normalize_layout", true);
+        auto* qterminal_context =
+            instance.inputContextManager().findByUUID(qterminal_uuid);
+        qterminal_context->setCapabilityFlags(CapabilityFlag::Preedit);
+        instance.setCurrentInputMethod(qterminal_context, "smarttype", false);
+        frontend->call<ITestFrontend::pushCommitExpectation>("с");
+        if (!frontend->call<ITestFrontend::sendKeyEvent>(
+                qterminal_uuid, Key("c"), false)) {
+            std::cerr << "FAIL: QTerminal RU layout-only mapping was not handled\n";
+            std::abort();
+        }
+        if (!qterminal_context->inputPanel().clientPreedit().empty() ||
+            qterminal_context->inputPanel().candidateList() != nullptr) {
+            std::cerr << "FAIL: QTerminal layout-only mode exposed SmartType UI\n";
+            std::abort();
+        }
+        if (frontend->call<ITestFrontend::sendKeyEvent>(
+                qterminal_uuid, Key("Control+c"), false)) {
+            std::cerr << "FAIL: QTerminal layout-only mode swallowed Ctrl+C\n";
+            std::abort();
+        }
+        runtime_store.set_setting("x11_normalize_layout", false);
+        frontend->call<ITestFrontend::destroyInputContext>(qterminal_uuid);
+
+        // Ubuntu's visible acceptance check uses GNOME Terminal. Cover its
+        // actual process name as well: layout mapping remains available, but
+        // correction UI/transactions and Ctrl shortcuts stay out of the way.
+        const auto gnome_terminal_uuid =
+            frontend->call<ITestFrontend::createInputContext>("gnome-terminal-server");
+        auto* gnome_terminal_context =
+            instance.inputContextManager().findByUUID(gnome_terminal_uuid);
+        gnome_terminal_context->setCapabilityFlags(CapabilityFlag::Preedit);
+        instance.setCurrentInputMethod(gnome_terminal_context, "smarttype", false);
+        runtime_store.set_setting("x11_normalize_layout", true);
+        frontend->call<ITestFrontend::pushCommitExpectation>("с");
+        if (!frontend->call<ITestFrontend::sendKeyEvent>(
+                gnome_terminal_uuid, Key("c"), false) ||
+            !gnome_terminal_context->inputPanel().clientPreedit().empty() ||
+            gnome_terminal_context->inputPanel().candidateList() != nullptr ||
+            frontend->call<ITestFrontend::sendKeyEvent>(
+                gnome_terminal_uuid, Key("Control+c"), false)) {
+            std::cerr << "FAIL: GNOME Terminal exclusion is not stateless\n";
+            std::abort();
+        }
+        runtime_store.set_setting("x11_normalize_layout", false);
+        frontend->call<ITestFrontend::destroyInputContext>(gnome_terminal_uuid);
+
+        // The tray's "pause in current application" is an app blacklist.
+        // LibreOffice must keep stateless RU mapping while correction,
+        // candidates and shortcuts are bypassed in that one context.
+        const auto paused_writer_uuid =
+            frontend->call<ITestFrontend::createInputContext>("soffice");
+        auto* paused_writer_context =
+            instance.inputContextManager().findByUUID(paused_writer_uuid);
+        paused_writer_context->setCapabilityFlags(CapabilityFlag::Preedit);
+        instance.setCurrentInputMethod(paused_writer_context, "smarttype", false);
+        runtime_store.set_setting("x11_normalize_layout", true);
+        runtime_store.blacklist_add("soffice");
+        frontend->call<ITestFrontend::pushCommitExpectation>("с");
+        if (!frontend->call<ITestFrontend::sendKeyEvent>(
+                paused_writer_uuid, Key("c"), false) ||
+            !paused_writer_context->inputPanel().clientPreedit().empty() ||
+            paused_writer_context->inputPanel().candidateList() != nullptr ||
+            frontend->call<ITestFrontend::sendKeyEvent>(
+                paused_writer_uuid, Key("Control+c"), false)) {
+            std::cerr << "FAIL: per-app pause disabled GNOME RU layout mapping\n";
+            std::abort();
+        }
+        runtime_store.blacklist_remove("soffice");
+        runtime_store.set_setting("x11_normalize_layout", false);
+        frontend->call<ITestFrontend::destroyInputContext>(paused_writer_uuid);
 
         const auto password_uuid = frontend->call<ITestFrontend::createInputContext>("firefox");
         auto* password_context = instance.inputContextManager().findByUUID(password_uuid);
@@ -464,6 +571,16 @@ int main() {
             std::abort();
         }
         frontend->call<ITestFrontend::destroyInputContext>(password_uuid);
+
+        // LibreOffice's generic VCL backend can expose raw XIM with no client
+        // preedit. That exact combination must be fail-closed; rich XIM and
+        // toolkit frontends remain usable.
+        if (!smarttype::unsafe_raw_xim_context("xim", false) ||
+            smarttype::unsafe_raw_xim_context("xim", true) ||
+            smarttype::unsafe_raw_xim_context("dbus", false)) {
+            std::cerr << "FAIL LibreOffice XIM: unsafe frontend predicate\n";
+            std::abort();
+        }
 
         const auto first_uuid = frontend->call<ITestFrontend::createInputContext>("first-app");
         auto* first_context = instance.inputContextManager().findByUUID(first_uuid);
@@ -793,8 +910,9 @@ int main() {
             }
         }
 
-        // ST-019: after continuing to type post-switch, BS deletes one char (IM stays).
-        // Use "rfr"→"как" so prior undo-learning of "ghb" does not suppress proactive.
+        // ST-019: after continuing to an unfinished post-switch token, BS
+        // deletes one char (IM stays). Use "rfrz" -> "какя" so the extended
+        // target is unambiguously not a complete dictionary word.
         {
             instance.setCurrentInputMethod(test_context, "smarttype-us", false);
             frontend->call<ITestFrontend::keyEvent>(test_uuid, Key(FcitxKey_r), false);
@@ -805,7 +923,7 @@ int main() {
                 std::abort();
             }
             // Extra queued EN key maps to RU and expires layout-undo episode.
-            frontend->call<ITestFrontend::keyEvent>(test_uuid, Key(FcitxKey_f), false);
+            frontend->call<ITestFrontend::keyEvent>(test_uuid, Key(FcitxKey_z), false);
             frontend->call<ITestFrontend::keyEvent>(test_uuid, Key(FcitxKey_BackSpace), false);
 
             if (instance.inputMethod(test_context) != "smarttype-us") {
@@ -823,6 +941,68 @@ int main() {
             frontend->call<ITestFrontend::keyEvent>(test_uuid, Key(FcitxKey_space), false);
             if (instance.inputMethod(test_context) != "smarttype") {
                 std::cerr << "FAIL ST-041: continued word did not flush deferred IM\n";
+                std::abort();
+            }
+        }
+
+        // P0 clean-Fedora regression: the proactive snapshot used to stop at
+        // the three-character trigger ("Ghb"). After the remaining physical
+        // keys completed Ghbdtn -> Привет, Space + Backspace therefore restored
+        // only "Ghb ". The committed undo transaction must retain every source
+        // key, including the sentence-capitalized first letter and delimiter.
+        {
+            runtime_store.set_string_setting("layout_mode", "auto");
+            runtime_store.set_setting("layout_correction", true);
+            runtime_store.set_setting("sentence_capitalization", true);
+            runtime_store.set_setting("inline_correction_flash", false);
+            instance.setCurrentInputMethod(test_context, "smarttype-us", false);
+            CapabilityFlags undo_flags = CapabilityFlag::Preedit;
+            undo_flags |= CapabilityFlag::SurroundingText;
+            test_context->setCapabilityFlags(undo_flags);
+
+            const Key ghbdtn[] = {
+                Key(FcitxKey_G), Key(FcitxKey_h), Key(FcitxKey_b),
+                Key(FcitxKey_d), Key(FcitxKey_t), Key(FcitxKey_n)};
+
+            // Owner follow-up: once the proactive result reaches the complete
+            // dictionary word "Привет", Backspace before any delimiter must
+            // undo the automatic layout replacement, not delete only "т".
+            // Disable learning for this first undo so the second half can
+            // independently exercise the existing Space + Backspace path.
+            runtime_store.set_setting("learning", false);
+            for (const auto& key : ghbdtn) {
+                frontend->call<ITestFrontend::keyEvent>(test_uuid, key, false);
+            }
+            if (test_context->inputPanel().clientPreedit().toString() != "Привет") {
+                std::cerr << "FAIL P0 undo: Ghbdtn did not proactively become Привет\n";
+                std::abort();
+            }
+            frontend->call<ITestFrontend::keyEvent>(test_uuid, Key(FcitxKey_BackSpace), false);
+            if (test_context->inputPanel().clientPreedit().toString() != "Ghbdtn" ||
+                instance.inputMethod(test_context) != "smarttype-us") {
+                std::cerr << "FAIL P0 undo: pre-delimiter Backspace did not restore Ghbdtn\n";
+                std::abort();
+            }
+            frontend->call<ITestFrontend::pushCommitExpectation>("Ghbdtn ");
+            frontend->call<ITestFrontend::keyEvent>(test_uuid, Key(FcitxKey_space), false);
+            runtime_store.set_setting("learning", true);
+
+            for (const auto& key : ghbdtn) {
+                frontend->call<ITestFrontend::keyEvent>(test_uuid, key, false);
+            }
+            if (test_context->inputPanel().clientPreedit().toString() != "Привет") {
+                std::cerr << "FAIL P0 undo: second Ghbdtn did not proactively become Привет\n";
+                std::abort();
+            }
+
+            frontend->call<ITestFrontend::pushCommitExpectation>("Привет ");
+            frontend->call<ITestFrontend::keyEvent>(test_uuid, Key(FcitxKey_space), false);
+            test_context->surroundingText().setText("Привет ", 7, 7);
+            test_context->updateSurroundingText();
+            frontend->call<ITestFrontend::pushCommitExpectation>("Ghbdtn ");
+            frontend->call<ITestFrontend::keyEvent>(test_uuid, Key(FcitxKey_BackSpace), false);
+            if (instance.inputMethod(test_context) != "smarttype-us") {
+                std::cerr << "FAIL P0 undo: original EN input method was not restored\n";
                 std::abort();
             }
         }
@@ -1474,10 +1654,10 @@ int main() {
             runtime_store.set_setting("sentence_capitalization", true);
         }
 
-        // X11/XIM desktops may leave the physical XKB group on US even when
-        // Fcitx has selected SmartType Russian. The X11 install mode coerces
+        // GNOME's IBus bridge and X11 desktops may leave the physical XKB
+        // group on US even when Fcitx has selected SmartType Russian. Coerce
         // those keysyms to the logical SmartType layout instead of leaking
-        // Latin text and silently bypassing corrections.
+        // Latin text or US punctuation.
         {
             runtime_store.set_setting("x11_normalize_layout", true);
             const auto x11_uuid =
@@ -1494,7 +1674,176 @@ int main() {
                 std::abort();
             }
             frontend->call<ITestFrontend::destroyInputContext>(x11_uuid);
+
+            runtime_store.set_setting("sentence_capitalization", false);
+            runtime_store.set_setting("autocorrect", false);
+            runtime_store.set_setting("auto_space_after_punctuation", false);
+            const auto punctuation_uuid =
+                frontend->call<ITestFrontend::createInputContext>("logical-ru-punctuation-row");
+            auto* punctuation_context =
+                instance.inputContextManager().findByUUID(punctuation_uuid);
+            punctuation_context->setCapabilityFlags(CapabilityFlag::Preedit);
+            instance.setCurrentInputMethod(punctuation_context, "smarttype", false);
+            const Key punctuation_keys[] = {
+                Key(FcitxKey_bracketleft, KeyStates{}, 34),
+                Key(FcitxKey_bracketright, KeyStates{}, 35),
+                Key(FcitxKey_semicolon, KeyStates{}, 47),
+                Key(FcitxKey_apostrophe, KeyStates{}, 48),
+                Key(FcitxKey_comma, KeyStates{}, 59),
+                Key(FcitxKey_period, KeyStates{}, 60)};
+            for (const auto& key : punctuation_keys) {
+                frontend->call<ITestFrontend::keyEvent>(punctuation_uuid, key, false);
+            }
+            if (punctuation_context->inputPanel().clientPreedit().toString() !=
+                "хъжэбю") {
+                std::cerr << "FAIL layout normalization: [ ] ; ' , . did not become "
+                             "х ъ ж э б ю\n";
+                std::abort();
+            }
+            frontend->call<ITestFrontend::pushCommitExpectation>("хъжэбю.");
+            frontend->call<ITestFrontend::keyEvent>(
+                punctuation_uuid, Key(FcitxKey_slash, KeyStates{}, 61), false);
+            frontend->call<ITestFrontend::destroyInputContext>(punctuation_uuid);
+
+            const auto shifted_uuid =
+                frontend->call<ITestFrontend::createInputContext>("logical-ru-shift-row");
+            auto* shifted_context = instance.inputContextManager().findByUUID(shifted_uuid);
+            shifted_context->setCapabilityFlags(CapabilityFlag::Preedit);
+            instance.setCurrentInputMethod(shifted_context, "smarttype", false);
+            const Key shifted_keys[] = {
+                Key(FcitxKey_braceleft, KeyState::Shift, 34),
+                Key(FcitxKey_braceright, KeyState::Shift, 35),
+                Key(FcitxKey_colon, KeyState::Shift, 47),
+                Key(FcitxKey_quotedbl, KeyState::Shift, 48),
+                Key(FcitxKey_less, KeyState::Shift, 59),
+                Key(FcitxKey_greater, KeyState::Shift, 60)};
+            for (const auto& key : shifted_keys) {
+                frontend->call<ITestFrontend::keyEvent>(shifted_uuid, key, false);
+            }
+            if (shifted_context->inputPanel().clientPreedit().toString() !=
+                "ХЪЖЭБЮ") {
+                std::cerr << "FAIL layout normalization: shifted punctuation row\n";
+                std::abort();
+            }
+            frontend->call<ITestFrontend::pushCommitExpectation>("ХЪЖЭБЮ,");
+            frontend->call<ITestFrontend::keyEvent>(
+                shifted_uuid, Key(FcitxKey_question, KeyState::Shift, 61), false);
+            frontend->call<ITestFrontend::destroyInputContext>(shifted_uuid);
+
             runtime_store.set_setting("x11_normalize_layout", false);
+            runtime_store.set_setting("sentence_capitalization", true);
+            runtime_store.set_setting("autocorrect", true);
+            runtime_store.set_setting("auto_space_after_punctuation", true);
+        }
+
+        // GNOME Wayland exposes ordinary application text fields through its
+        // IBus compositor bridge with program=gnome-shell. Treating that
+        // program name as shell chrome disables SmartType in every GNOME app.
+        // Its live capability mask is 0x150052: client preedit and surrounding
+        // text are present, but ClientSideInputPanel and CommitStringWithCursor
+        // are not. This path must finish every correction transaction before
+        // accepting the next word.
+        {
+            runtime_store.set_string_setting("layout_mode", "auto");
+            runtime_store.set_setting("autocorrect", true);
+            runtime_store.set_setting("sentence_capitalization", false);
+            runtime_store.set_setting("inline_correction_flash", true);
+            const auto gnome_uuid =
+                frontend->call<ITestFrontend::createInputContext>("gnome-shell");
+            auto* gnome_context = instance.inputContextManager().findByUUID(gnome_uuid);
+            CapabilityFlags gnome_flags = CapabilityFlag::Preedit;
+            gnome_flags |= CapabilityFlag::FormattedPreedit;
+            gnome_flags |= CapabilityFlag::SurroundingText;
+            gnome_flags |= CapabilityFlag::SpellCheck;
+            gnome_flags |= CapabilityFlag::WordCompletion;
+            gnome_flags |= CapabilityFlag::UppwercaseSentences;
+            gnome_context->setCapabilityFlags(gnome_flags);
+            instance.setCurrentInputMethod(gnome_context, "smarttype", false);
+
+            const Key gnome_typo[] = {
+                Key(FcitxKey_Cyrillic_es), Key(FcitxKey_Cyrillic_ie),
+                Key(FcitxKey_Cyrillic_ve), Key(FcitxKey_Cyrillic_o),
+                Key(FcitxKey_Cyrillic_de), Key(FcitxKey_Cyrillic_en),
+                Key(FcitxKey_Cyrillic_ya)};
+
+            // Tab commits a candidate only after explicitly clearing the IBus
+            // preedit. CommitText-before-empty-preedit leaves GNOME's caret at
+            // the beginning of the old composition.
+            bool candidate_commit_saw_empty_preedit = false;
+            auto gnome_commit_watcher = instance.watchEvent(
+                EventType::InputContextCommitString, EventWatcherPhase::Default,
+                [&](Event& raw_event) {
+                    auto& commit_event = static_cast<CommitStringEvent&>(raw_event);
+                    if (commit_event.inputContext() == gnome_context &&
+                        commit_event.text() == "сегодня ") {
+                        candidate_commit_saw_empty_preedit =
+                            gnome_context->inputPanel().clientPreedit().empty();
+                    }
+                });
+            for (const auto& key : gnome_typo) {
+                frontend->call<ITestFrontend::keyEvent>(gnome_uuid, key, false);
+            }
+            if (gnome_context->inputPanel().candidateList() == nullptr) {
+                std::cerr << "FAIL GNOME: expected candidates before Tab\n";
+                std::abort();
+            }
+            frontend->call<ITestFrontend::pushCommitExpectation>("сегодня ");
+            frontend->call<ITestFrontend::keyEvent>(gnome_uuid, Key(FcitxKey_Tab), false);
+            if (!candidate_commit_saw_empty_preedit ||
+                !gnome_context->inputPanel().clientPreedit().empty()) {
+                std::cerr << "FAIL GNOME: candidate committed before clearing IBus preedit\n";
+                std::abort();
+            }
+            gnome_commit_watcher.reset();
+
+            // Exact owner regression: physical keys for
+            // "привет рщц фку нщг друг " must produce one complete commit per
+            // word. In particular, "how " must not remain as a 160 ms preedit
+            // and absorb the first letters of "are".
+            const Key privet_keys[] = {
+                Key(FcitxKey_Cyrillic_pe), Key(FcitxKey_Cyrillic_er),
+                Key(FcitxKey_Cyrillic_i), Key(FcitxKey_Cyrillic_ve),
+                Key(FcitxKey_Cyrillic_ie), Key(FcitxKey_Cyrillic_te)};
+            frontend->call<ITestFrontend::pushCommitExpectation>("привет ");
+            for (const auto& key : privet_keys) {
+                frontend->call<ITestFrontend::keyEvent>(gnome_uuid, key, false);
+            }
+            frontend->call<ITestFrontend::keyEvent>(gnome_uuid, Key(FcitxKey_space), false);
+
+            const Key how_on_ru[] = {
+                Key(FcitxKey_Cyrillic_er), Key(FcitxKey_Cyrillic_shcha),
+                Key(FcitxKey_Cyrillic_tse)};
+            frontend->call<ITestFrontend::pushCommitExpectation>("how ");
+            for (const auto& key : how_on_ru) {
+                frontend->call<ITestFrontend::keyEvent>(gnome_uuid, key, false);
+            }
+            frontend->call<ITestFrontend::keyEvent>(gnome_uuid, Key(FcitxKey_space), false);
+            if (!gnome_context->inputPanel().clientPreedit().empty()) {
+                std::cerr << "FAIL GNOME: layout correction leaked into delayed preedit\n";
+                std::abort();
+            }
+
+            const auto send_gnome_ascii = [&](std::string_view text) {
+                for (const char value : text) {
+                    frontend->call<ITestFrontend::keyEvent>(
+                        gnome_uuid, Key(std::string(1, value)), false);
+                }
+            };
+            frontend->call<ITestFrontend::pushCommitExpectation>("are ");
+            send_gnome_ascii("are");
+            frontend->call<ITestFrontend::keyEvent>(gnome_uuid, Key(FcitxKey_space), false);
+            frontend->call<ITestFrontend::pushCommitExpectation>("you ");
+            send_gnome_ascii("you");
+            frontend->call<ITestFrontend::keyEvent>(gnome_uuid, Key(FcitxKey_space), false);
+            frontend->call<ITestFrontend::pushCommitExpectation>("друг ");
+            send_gnome_ascii("lheu");
+            frontend->call<ITestFrontend::keyEvent>(gnome_uuid, Key(FcitxKey_space), false);
+            if (!gnome_context->inputPanel().clientPreedit().empty()) {
+                std::cerr << "FAIL GNOME: exact phrase left an active preedit\n";
+                std::abort();
+            }
+            frontend->call<ITestFrontend::destroyInputContext>(gnome_uuid);
+            runtime_store.set_setting("inline_correction_flash", false);
         }
 
         // ST-034: clients without SurroundingText must still autocorrect, undo

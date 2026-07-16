@@ -6,6 +6,10 @@ PREFIX="${PREFIX:-$HOME/.local}"
 echo "Останавливаю службы SmartType..."
 systemctl --user stop fcitx5-layout-sync.service 2>/dev/null || true
 systemctl --user disable fcitx5-layout-sync.service 2>/dev/null || true
+rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/smarttype-kde-layouts.service" \
+      "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/plasma-kwin_wayland.service.d/20-smarttype-layouts.conf" \
+      "${XDG_CONFIG_HOME:-$HOME/.config}/plasma-workspace/env/smarttype-kde-layouts.sh" \
+      "$HOME/.local/bin/configure-kde-layouts.py"
 
 # Kill running processes
 systemctl --user disable --now smarttype-tray.service 2>/dev/null || true
@@ -68,6 +72,30 @@ done
 
 AUTOSTART_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
 
+IMSETTINGS_AUTOSTART="$AUTOSTART_DIR/imsettings-start.desktop"
+IMSETTINGS_BACKUP="$IMSETTINGS_AUTOSTART.before-smarttype"
+if [[ -f $IMSETTINGS_AUTOSTART ]] &&
+   grep -qx 'X-SmartType-Managed=true' "$IMSETTINGS_AUTOSTART" 2>/dev/null; then
+    rm -f "$IMSETTINGS_AUTOSTART"
+    [[ -e $IMSETTINGS_BACKUP ]] && mv "$IMSETTINGS_BACKUP" "$IMSETTINGS_AUTOSTART"
+fi
+
+IMSETTINGS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/imsettings"
+IMSETTINGS_XINPUTRC="$IMSETTINGS_DIR/xinputrc"
+IMSETTINGS_XINPUTRC_BACKUP="$IMSETTINGS_DIR/xinputrc.before-smarttype"
+IMSETTINGS_XINPUTRC_MARKER="$IMSETTINGS_DIR/xinputrc.smarttype-managed"
+if [[ -f $IMSETTINGS_XINPUTRC_MARKER ]]; then
+    managed_profile=$(head -n1 "$IMSETTINGS_XINPUTRC_MARKER" 2>/dev/null || true)
+    if [[ -L $IMSETTINGS_XINPUTRC ]] &&
+       [[ $(readlink -f "$IMSETTINGS_XINPUTRC" 2>/dev/null) == \
+          $(readlink -f "$managed_profile" 2>/dev/null) ]]; then
+        rm -f "$IMSETTINGS_XINPUTRC"
+        [[ -e $IMSETTINGS_XINPUTRC_BACKUP || -L $IMSETTINGS_XINPUTRC_BACKUP ]] &&
+            mv "$IMSETTINGS_XINPUTRC_BACKUP" "$IMSETTINGS_XINPUTRC"
+    fi
+    rm -f "$IMSETTINGS_XINPUTRC_MARKER"
+fi
+
 GNOME_FCITX_AUTOSTART="$AUTOSTART_DIR/org.fcitx.Fcitx5.desktop"
 GNOME_FCITX_BACKUP="$GNOME_FCITX_AUTOSTART.before-smarttype-gnome"
 if [[ -f $GNOME_FCITX_AUTOSTART ]] && grep -q '^X-SmartType-Managed=true$' "$GNOME_FCITX_AUTOSTART"; then
@@ -91,7 +119,8 @@ rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/smarttype.svg" \
       "$PREFIX/share/icons/hicolor/512x512/apps/smarttype-pause.png"
 
 rm -f "$HOME/.local/share/systemd/user/fcitx5-layout-sync.service"
-rm -f "$HOME/.config/environment.d/90-smarttype.conf"
+rm -f "$HOME/.config/environment.d/90-smarttype.conf" \
+      "$HOME/.config/environment.d/fcitx5-smarttype.conf"
 rm -f "$PREFIX/share/smarttype/doctor.sh" "$PREFIX/share/smarttype/uninstall-user.sh"
 systemctl --user daemon-reload 2>/dev/null || true
 
