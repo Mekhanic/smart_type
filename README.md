@@ -8,10 +8,13 @@ SmartType — контекстный автокорректор русского
 SmartType развивается как ранний релиз для перечисленных ниже окружений.
 
 Исходный код распространяется по лицензии
-[GNU General Public License v3.0](LICENSE). Страница проекта и поддержка:
-[github.com/Mekhanic/smart_type](https://github.com/Mekhanic/smart_type).
+[GNU General Public License v3.0](LICENSE).
+Telegram-канал: [@type_smart](https://t.me/type_smart).
+Поддержать разработку: [Tribute (Telegram)](https://t.me/tribute/app?startapp=dNeD).
+Страница проекта: [github.com/Mekhanic/smart_type](https://github.com/Mekhanic/smart_type).
 Сведения о компонентах сторонних разработчиков находятся в
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 
 ## Поддерживаемые окружения
 
@@ -125,6 +128,11 @@ smarttypectl status
 
 Личная база по умолчанию сохраняется.
 
+## Поддержка и сообщество
+
+- **Telegram-канал**: [@type_smart](https://t.me/type_smart) — новости, обсуждение и анонсы обновлений.
+- **Поддержать разработку**: [Tribute (Telegram)](https://t.me/tribute/app?startapp=dNeD) — разовые и регулярные пожертвования.
+
 ## Разработка
 
 Для принудительной сборки и тестирования из исходников:
@@ -147,3 +155,4 @@ ctest --test-dir build --output-on-failure
 Архитектура и границы поддержки описаны в
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), ручная матрица — в
 [docs/DISTRO_TEST_PLAN.md](docs/DISTRO_TEST_PLAN.md).
+
