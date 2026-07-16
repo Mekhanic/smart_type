@@ -4,6 +4,8 @@ from __future__ import annotations
 import importlib.util
 import pathlib
 import tempfile
+from types import SimpleNamespace
+from unittest import mock
 
 
 def load(path: pathlib.Path):
@@ -88,6 +90,39 @@ def main() -> None:
             autostart.read_text(),
         )
         assert before == after
+
+    settings = {
+        "enabled-extensions": ["existing@example.org"],
+        "disabled-extensions": [
+            module.KIMPANEL_UUID,
+            "disabled@example.org",
+            "appindicator@example.org",
+        ],
+    }
+    writes: dict[str, list[str]] = {}
+
+    def fake_run(command, **_kwargs):
+        key = command[3]
+        if command[1] == "get":
+            return SimpleNamespace(stdout=repr(settings[key]))
+        assert command[1] == "set"
+        import ast
+
+        writes[key] = ast.literal_eval(command[4])
+        return SimpleNamespace(stdout="")
+
+    with mock.patch.object(module.shutil, "which", return_value="/usr/bin/gsettings"), \
+         mock.patch.object(module.subprocess, "run", side_effect=fake_run):
+        module.enable_extensions(
+            [module.KIMPANEL_UUID, "appindicator@example.org"]
+        )
+
+    assert writes["enabled-extensions"] == [
+        "existing@example.org",
+        module.KIMPANEL_UUID,
+        "appindicator@example.org",
+    ]
+    assert writes["disabled-extensions"] == ["disabled@example.org"]
 
     print("GNOME Fcitx configuration tests passed")
 

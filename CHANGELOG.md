@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3 - 2026-07-16
+
+- Make GNOME extension activation remove Kimpanel and AppIndicator from
+  `disabled-extensions` as well as adding them to `enabled-extensions`. This
+  fixes a clean reinstall where Fcitx loaded `classicui` after reboot even
+  though the installer and stored enabled list requested Kimpanel.
+
 ## 0.2.2 - 2026-07-16
 
 - Stop KDE's periodic layout observation from forcing an explicitly selected

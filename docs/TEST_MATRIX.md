@@ -1,6 +1,6 @@
 # SmartType Release Test Matrix
 
-This file records only the current `0.2.2` release evidence. Historical release
+This file records only the current `0.2.3` release evidence. Historical release
 changes belong in `CHANGELOG.md`.
 
 ## Automated suite
@@ -33,16 +33,13 @@ The focused regressions include:
   it is stored outside `Groups/0`;
 - GNOME compositor, Chromium controlled-field, LibreOffice raw-XIM fail-closed,
   punctuation-row and Kimpanel mouse regressions.
+- a GNOME reinstall with Kimpanel/AppIndicator already present in
+  `disabled-extensions` removes those conflicts while preserving unrelated
+  disabled extensions.
 
-The clean local pre-tag rebuilds passed the same 17 tests, payload verification,
-prebuilt-installer smoke and extracted-bundle installation smoke. The tag
-workflow rebuilds these artifacts and publishes separate checksum files:
-
-| Archive | SHA-256 |
-|---|---|
-| `smarttype-v0.2.2-fedora44-x86_64.tar.gz` | `34177919a63d6fde57a2251ad4563355575d03586ba45c09cec2ac136a3db868` |
-| `smarttype-v0.2.2-ubuntu2604-x86_64.tar.gz` | `107ac3a684ae41cf130bb768267d514b8c1546edf5aa2c0504bb980a39c18822` |
-| `smarttype-v0.2.2-kali-rolling-x86_64.tar.gz` | `da963cd71fe23db722ba36ea167f7f3ba6a6e2b0e663ccfe7b829683d2848835` |
+The full 17-test suite passes with the `0.2.3` fix. Final archive checksums will
+be recorded from the immutable tag workflow, not copied from rejected
+`v0.2.2` assets.
 
 ## Installed and owner verification
 

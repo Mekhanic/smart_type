@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(smarttype VERSION 0.2.2 LANGUAGES C CXX)
+project(smarttype VERSION 0.2.3 LANGUAGES C CXX)
 
 include(GNUInstallDirs)
 

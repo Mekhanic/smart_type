@@ -141,9 +141,9 @@ X-SmartType-Managed=true
     )
 
 
-def enabled_extensions() -> list[str]:
+def extension_setting(key: str) -> list[str]:
     result = subprocess.run(
-        ["gsettings", "get", "org.gnome.shell", "enabled-extensions"],
+        ["gsettings", "get", "org.gnome.shell", key],
         check=True,
         capture_output=True,
         text=True,
@@ -153,27 +153,40 @@ def enabled_extensions() -> list[str]:
         raw = raw[4:]
     value = ast.literal_eval(raw)
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise ValueError("unexpected org.gnome.shell enabled-extensions value")
+        raise ValueError(f"unexpected org.gnome.shell {key} value")
     return value
 
 
 def enable_extensions(uuids: list[str]) -> None:
     if not shutil.which("gsettings"):
         raise RuntimeError("gsettings is required to enable GNOME extensions")
-    current = enabled_extensions()
-    changed = False
+    enabled = extension_setting("enabled-extensions")
+    disabled = extension_setting("disabled-extensions")
+    enabled_changed = False
     for uuid in uuids:
-        if uuid and uuid not in current:
-            current.append(uuid)
-            changed = True
-    if changed:
+        if uuid and uuid not in enabled:
+            enabled.append(uuid)
+            enabled_changed = True
+    if enabled_changed:
         subprocess.run(
             [
                 "gsettings",
                 "set",
                 "org.gnome.shell",
                 "enabled-extensions",
-                repr(current),
+                repr(enabled),
+            ],
+            check=True,
+        )
+    updated_disabled = [uuid for uuid in disabled if uuid not in uuids]
+    if updated_disabled != disabled:
+        subprocess.run(
+            [
+                "gsettings",
+                "set",
+                "org.gnome.shell",
+                "disabled-extensions",
+                repr(updated_disabled),
             ],
             check=True,
         )
