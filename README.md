@@ -1,19 +1,32 @@
 # SmartType
 
-SmartType — контекстный автокорректор русского и английского текста для Linux.
-Он работает как метод ввода Fcitx 5: исправляет опечатки и неверную раскладку,
-показывает кандидатов возле курсора и умеет вернуть последнее исправление
-клавишей Backspace.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="icons/white_theme_logo.png">
+    <source media="(prefers-color-scheme: light)" srcset="icons/dark_theme_logo.png">
+    <img alt="SmartType Logo" src="icons/dark_theme_logo.png" width="380" />
+  </picture>
+</p>
 
-SmartType развивается как ранний релиз для перечисленных ниже окружений.
+<p align="center">
+  <b>Контекстный автокорректор русского и английского текста для Linux</b>
+</p>
 
-Исходный код распространяется по лицензии
-[GNU General Public License v3.0](LICENSE).
-Telegram-канал: [@type_smart](https://t.me/type_smart).
-Поддержать разработку: [Tribute (Telegram)](https://t.me/tribute/app?startapp=dNeD).
-Страница проекта: [github.com/Mekhanic/smart_type](https://github.com/Mekhanic/smart_type).
-Сведения о компонентах сторонних разработчиков находятся в
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+<p align="center">
+  <a href="https://t.me/type_smart"><img src="https://img.shields.io/badge/Telegram-%40type__smart-179CDE?style=flat-square&logo=telegram&logoColor=white" alt="Telegram Channel"></a>
+  <a href="https://t.me/tribute/app?startapp=dNeD"><img src="https://img.shields.io/badge/%D0%9F%D0%BE%D0%B4%D0%B4%D0%B5%D1%80%D0%B6%D0%B0%D1%82%D1%8C-Tribute-F8A91C?style=flat-square&logo=telegram&logoColor=white" alt="Donate"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square" alt="License"></a>
+  <a href="https://github.com/Mekhanic/smart_type/releases/latest"><img src="https://img.shields.io/github/v/release/Mekhanic/smart_type?style=flat-square&color=blueviolet" alt="Latest Release"></a>
+</p>
+
+---
+
+**SmartType** — умный контекстный автокорректор русского и английского текста для Linux, работающий как метод ввода **Fcitx 5**. Он автоматически исправляет опечатки и раскладку клавиатуры, выводит интерактивные подсказки у курсора и позволяет отменить автозамену одной клавишей `Backspace`.
+
+*Проект развивается в режиме раннего релиза для перечисленных ниже окружений.*
+
+Исходный код распространяется по лицензии [GNU General Public License v3.0](LICENSE). Сведения о компонентах сторонних разработчиков находятся в [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 
 
 ## Поддерживаемые окружения
